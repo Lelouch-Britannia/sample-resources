@@ -1,0 +1,127 @@
+# ===== METADATA (Public - LearningUnit) =====
+metadata:
+  slug: "kubernetes-deployment-selector-mismatch"
+  title: "Debug Deployment: Selector Mismatch"
+  topic: "Deployment"
+  order_index: 4
+  type: "coding"
+  difficulty: "beginner"
+  
+  description: |
+    Debug and fix a broken deployment manifest that fails to create pods due to a selector mismatch - one of the most common and frustrating Deployment errors.
+    
+    **Focus**: Understanding the critical immutable relationship between `spec.selector.matchLabels` and `spec.template.metadata.labels`.
+    
+    This exercise simulates a real-world scenario where a developer accidentally uses inconsistent labels, resulting in a Deployment that appears to exist but creates zero pods. The error message "selector does not match template labels" is Kubernetes preventing an invalid configuration. When labels don't match, the Deployment controller cannot identify which pods it should manage, so it refuses to create any. This validation exists because changing a selector after creation would orphan existing pods, creating management chaos.
+  
+  steps:
+    - "Identify the mismatch between selector labels and template labels"
+    - "Fix the template labels to match selector (app: redis, tier: cache)"
+    - "Ensure Deployment creates 3 replicas of redis:7-alpine"
+    - "Verify container port 6379 is exposed"
+    - "Apply deployment and confirm pods are created"
+    - "Test Redis connectivity using redis-cli ping"
+  
+  hints:
+    - "Compare spec.selector.matchLabels with spec.template.metadata.labels"
+    - "Labels are case-sensitive and must match exactly"
+    - "The selector expects tier: cache, but the template has tier: database"
+    - "Kubernetes won't create pods if the selector doesn't match the template"
+
+# ===== PUBLIC EDITOR CONFIG =====
+editor_config:
+  language: "yaml"
+  initial_code: |
+    # BROKEN: This deployment has a selector mismatch!
+    # Your task: Fix it so pods are created successfully
+    
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: redis-cache
+      labels:
+        app: redis
+    spec:
+      replicas: 3
+      selector:
+        matchLabels:
+          app: redis
+          tier: cache
+      template:
+        metadata:
+          labels:
+            app: redis
+            tier: database  # ❌ BUG: This doesn't match selector (cache vs database)
+        spec:
+          containers:
+          - name: redis
+            image: redis:7-alpine
+            ports:
+            - containerPort: 6379
+              name: redis
+
+# ===== PRIVATE DATA (UnitSolution - NEVER exposed) =====
+_solution:
+  code_solution: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: redis-cache
+    spec:
+      replicas: 3
+      selector:
+        matchLabels:
+          app: redis
+          tier: cache
+      template:
+        metadata:
+          labels:
+            app: redis
+            tier: cache  # ✅ FIXED: Now matches selector
+        spec:
+          containers:
+          - name: redis
+            image: redis:7-alpine
+            ports:
+            - containerPort: 6379
+              name: redis
+  
+  validation_script: |
+    #!/bin/bash
+    # Apply the deployment
+    kubectl apply -f solution.yaml
+    
+    # Wait for deployment to be ready
+    timeout=90
+    elapsed=0
+    while [ $elapsed -lt $timeout ]; do
+      ready=$(kubectl get deployment redis-cache -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+      if [ "$ready" = "3" ]; then
+        echo "✓ Deployment has 3 ready replicas"
+        
+        # Verify pod labels match selector
+        pod_count=$(kubectl get pods -l app=redis,tier=cache --no-headers | wc -l)
+        if [ "$pod_count" -eq "3" ]; then
+          echo "✓ Pod labels correctly match selector"
+          
+          # Test Redis connectivity
+          pod_name=$(kubectl get pods -l app=redis,tier=cache -o jsonpath='{.items[0].metadata.name}')
+          response=$(kubectl exec "$pod_name" -- redis-cli ping 2>/dev/null)
+          
+          if [ "$response" = "PONG" ]; then
+            echo "✓ Redis is running and responding to commands"
+            exit 0
+          fi
+        fi
+      fi
+      sleep 3
+      ((elapsed+=3))
+    done
+    
+    echo "✗ Deployment failed to create pods or selector mismatch still exists"
+    kubectl get deployment redis-cache
+    kubectl describe deployment redis-cache | tail -10
+    exit 1
+  
+  quiz_answers: null
+  quiz_explanations: null

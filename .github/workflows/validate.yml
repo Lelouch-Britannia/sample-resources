@@ -1,0 +1,83 @@
+name: Validate Learning Units
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  validate-yaml:
+    name: Validate YAML Structure
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install pyyaml
+      
+      - name: Validate learning unit structure
+        run: |
+          python scripts/validate_learning_units.py k8s/**/*.yaml
+      
+      - name: Check YAML syntax
+        run: |
+          find k8s -name "*.yaml" -exec python -c "import yaml; yaml.safe_load(open('{}'))" \;
+
+  validate-kubernetes:
+    name: Validate Kubernetes Manifests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+      
+      - name: Validate Kubernetes YAML (dry-run)
+        run: |
+          # Validate only files with Kubernetes API objects
+          for file in k8s/**/*.yaml; do
+            if grep -q "apiVersion:" "$file"; then
+              echo "Validating $file"
+              kubectl apply --dry-run=client -f "$file" || echo "⚠️  $file not a valid K8s manifest (might be learning unit)"
+            fi
+          done
+        continue-on-error: true  # Some YAML files are learning units, not K8s manifests
+
+  check-content-quality:
+    name: Check Content Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install pyyaml
+      
+      - name: Check conceptual unit descriptions
+        run: |
+          python scripts/check_content_quality.py
+      
+      - name: Generate quality report
+        run: |
+          echo "## Content Quality Report" >> $GITHUB_STEP_SUMMARY
+          python scripts/check_content_quality.py --format=markdown >> $GITHUB_STEP_SUMMARY

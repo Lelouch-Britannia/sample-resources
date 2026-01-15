@@ -1,0 +1,154 @@
+# ===== METADATA (Public - LearningUnit) =====
+metadata:
+  slug: "kubernetes-pod-shared-volume-writer-reader"
+  title: "Shared Volume: Writer and Reader Containers"
+  topic: "Pods"
+  order_index: 7
+  type: "coding"
+  difficulty: "beginner"
+  
+  description: |
+    Create a Pod with two containers sharing a volume: one container writes timestamps to a file, the other serves that file via nginx.
+    
+    **Focus**: Using emptyDir volumes and volumeMounts to share data between containers in a Pod.
+    
+    This exercise demonstrates the shared volume pattern where containers exchange data through a common filesystem. The workflow:
+    1. An `emptyDir` volume starts empty when the Pod is created
+    2. The debian container writes the current date/time to `/html/index.html` every second
+    3. The nginx container mounts the same volume to `/usr/share/nginx/html` and serves the file
+    4. Both containers can access the same data, but through different mount paths
+    
+    **Key Concepts**:
+    - **emptyDir**: A temporary volume that exists for the lifetime of the Pod
+    - **volumeMounts**: Each container mounts the shared volume to its own path
+    - **Data sharing**: One container writes, the other reads from the same volume
+    - **Volume lifecycle**: When the Pod is deleted, the emptyDir and all its data are permanently lost
+    
+    **Why Different Paths?**
+    The same volume is mounted to different paths in each container based on the container's needs:
+    - Nginx expects web files in `/usr/share/nginx/html`
+    - The debian container uses `/html` for writing
+    - Both paths point to the same underlying storage
+  
+  steps:
+    - "Create Pod named 'mc1' with an emptyDir volume named 'html'"
+    - "Add first container '1st' using nginx image"
+    - "Mount 'html' volume to /usr/share/nginx/html in nginx container"
+    - "Add second container '2nd' using debian image"
+    - "Mount 'html' volume to /html in debian container"
+    - "Configure debian container to write date to /html/index.html every second"
+  
+  hints:
+    - "Define volumes at spec.volumes level, not inside containers"
+    - "Each container uses volumeMounts to mount the shared volume"
+    - "The same volume can be mounted to different paths in each container"
+    - "Use command and args fields to run the while loop in debian container"
+
+# ===== PUBLIC EDITOR CONFIG =====
+editor_config:
+  language: "yaml"
+  initial_code: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: mc1
+    spec:
+      volumes:
+      - name: html
+        emptyDir: {}
+      containers:
+      - name: 1st
+        image: nginx
+        volumeMounts:
+        - name: html
+          mountPath: /usr/share/nginx/html
+      # TODO: Add second container that writes to the shared volume
+      # - name: 2nd
+      #   image: debian
+      #   volumeMounts:
+      #   - name: html
+      #     mountPath: /html
+      #   command: ["/bin/sh", "-c"]
+      #   args:
+      #     - while true; do
+      #         date >> /html/index.html;
+      #         sleep 1;
+      #       done
+
+# ===== PRIVATE DATA (UnitSolution - NEVER exposed) =====
+_solution:
+  code_solution: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: mc1
+    spec:
+      volumes:
+      - name: html
+        emptyDir: {}
+      containers:
+      - name: 1st
+        image: nginx
+        volumeMounts:
+        - name: html
+          mountPath: /usr/share/nginx/html
+      - name: 2nd
+        image: debian
+        volumeMounts:
+        - name: html
+          mountPath: /html
+        command: ["/bin/sh", "-c"]
+        args:
+          - while true; do
+              date >> /html/index.html;
+              sleep 1;
+            done
+  
+  validation_script: |
+    #!/bin/bash
+    # Apply the manifest
+    kubectl apply -f solution.yaml
+    
+    # Wait for pod to be ready
+    timeout=90
+    elapsed=0
+    while [ $elapsed -lt $timeout ]; do
+      ready=$(kubectl get pod mc1 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+      if [ "$ready" = "True" ]; then
+        echo "✓ Pod is ready with both containers"
+        
+        # Wait for some data to be written
+        sleep 5
+        
+        # Verify both containers can access the same file
+        content_1st=$(kubectl exec mc1 -c 1st -- cat /usr/share/nginx/html/index.html 2>/dev/null)
+        content_2nd=$(kubectl exec mc1 -c 2nd -- cat /html/index.html 2>/dev/null)
+        
+        if [ -n "$content_1st" ] && [ -n "$content_2nd" ]; then
+          if [ "$content_1st" = "$content_2nd" ]; then
+            echo "✓ Both containers share the same volume data"
+            
+            # Verify content is being updated (dates are being written)
+            if echo "$content_1st" | grep -q "20"; then
+              echo "✓ Writer container is generating timestamps"
+              
+              # Verify nginx can serve the file
+              kubectl exec mc1 -c 1st -- curl -s localhost:80 | grep -q "20"
+              if [ $? -eq 0 ]; then
+                echo "✓ Nginx is serving the shared HTML file"
+                exit 0
+              fi
+            fi
+          fi
+        fi
+      fi
+      sleep 3
+      ((elapsed+=3))
+    done
+    
+    echo "✗ Shared volume validation failed"
+    kubectl describe pod mc1 | tail -20
+    exit 1
+  
+  quiz_answers: null
+  quiz_explanations: null

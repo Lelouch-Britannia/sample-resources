@@ -1,0 +1,264 @@
+# ===== METADATA (Public - LearningUnit) =====
+metadata:
+  slug: "kubernetes-deployment-rollout-rollback"
+  title: "Deployment Rollouts and Rollbacks"
+  topic: "Deployment"
+  order_index: 3
+  type: "conceptual"
+  difficulty: "intermediate"
+  
+  description: |
+    Master the essential kubectl commands and techniques for managing deployment lifecycles, from triggering updates to emergency rollbacks.
+    
+    ## Overview
+    Kubernetes Deployments maintain a revision history that enables you to track changes, monitor rollout progress, and instantly revert to previous versions when issues arise. Understanding rollout management is critical for maintaining service availability during updates and recovering quickly from failed deployments. The `kubectl rollout` command suite provides powerful tools for deployment lifecycle management.
+    
+    ## Key Concepts
+    
+    ### Deployment Revisions and History
+    Every time you update a Deployment's pod template (image, environment variables, resource limits), Kubernetes creates a new revision. The revision history allows you to track what changed and when.
+    
+    **View Revision History:**
+    ```bash
+    kubectl rollout history deployment/nginx-deployment
+    # Output:
+    # REVISION  CHANGE-CAUSE
+    # 1         <none>
+    # 2         kubectl set image deployment/nginx-deployment nginx=nginx:1.27
+    # 3         kubectl set image deployment/nginx-deployment nginx=nginx:1.28
+    ```
+    
+    **View Specific Revision Details:**
+    ```bash
+    kubectl rollout history deployment/nginx-deployment --revision=2
+    # Shows full pod template spec for revision 2
+    ```
+    
+    **Important**: By default, Kubernetes keeps the last 10 revisions (configurable with `spec.revisionHistoryLimit`). Older revisions are automatically cleaned up.
+    
+    ### Triggering Deployment Updates
+    
+    **Method 1: Update Image (Common)**
+    ```bash
+    kubectl set image deployment/nginx-deployment nginx=nginx:1.27
+    # Triggers rolling update to new image
+    ```
+    
+    **Method 2: Edit Deployment Directly**
+    ```bash
+    kubectl edit deployment nginx-deployment
+    # Opens editor to modify any part of the spec
+    # Save and exit to trigger update
+    ```
+    
+    **Method 3: Apply Updated YAML**
+    ```bash
+    kubectl apply -f updated-deployment.yaml
+    # Declarative update using manifest file
+    ```
+    
+    ### Monitoring Rollout Progress
+    
+    **Real-Time Status Monitoring:**
+    ```bash
+    kubectl rollout status deployment/nginx-deployment
+    # Output:
+    # Waiting for deployment "nginx-deployment" rollout to finish: 2 out of 3 new replicas have been updated...
+    # deployment "nginx-deployment" successfully rolled out
+    ```
+    
+    **Watch ReplicaSet Changes:**
+    ```bash
+    kubectl get rs -w
+    # Watch the "Pass the Baton" dance:
+    # Old RS scales down: 3 → 2 → 1 → 0
+    # New RS scales up:   0 → 1 → 2 → 3
+    ```
+    
+    **Check Deployment Status:**
+    ```bash
+    kubectl get deployment nginx-deployment
+    # READY column shows progress: 2/3 means 2 ready out of 3 desired
+    ```
+    
+    ### Performing Rollbacks
+    
+    **Rollback to Previous Revision (Most Common):**
+    ```bash
+    kubectl rollout undo deployment/nginx-deployment
+    # Immediately reverts to the previous revision
+    # The Deployment controller scales down current RS and scales up previous RS
+    ```
+    
+    **Rollback to Specific Revision:**
+    ```bash
+    kubectl rollout undo deployment/nginx-deployment --to-revision=2
+    # Reverts to revision 2 specifically
+    ```
+    
+    **What Happens During Rollback:**
+    1. Deployment controller identifies target revision's pod template
+    2. Creates/resumes ReplicaSet matching that template
+    3. Performs rolling update to that version (respects maxSurge/maxUnavailable)
+    4. Creates a new revision in history (rollback itself is a new revision)
+    
+    **Important**: Rollback is NOT instantaneous - it performs a standard rolling update to the previous version. For instant rollback, use Blue/Green strategy.
+    
+    ### Scaling Deployments
+    
+    **Manual Scaling:**
+    ```bash
+    # Scale to 5 replicas
+    kubectl scale deployment/nginx-deployment --replicas=5
+    
+    # Verify scaling
+    kubectl get deployment nginx-deployment
+    # READY column should show 5/5
+    ```
+    
+    **Autoscaling with HPA (Horizontal Pod Autoscaler):**
+    ```bash
+    # Create HPA based on CPU usage
+    kubectl autoscale deployment nginx-deployment --min=3 --max=10 --cpu-percent=80
+    
+    # View HPA status
+    kubectl get hpa
+    # Shows current/desired replicas and CPU utilization
+    ```
+    
+    ### Pausing and Resuming Rollouts
+    
+    **Pause Rollout (for canary testing):**
+    ```bash
+    kubectl rollout pause deployment/nginx-deployment
+    # Freezes rollout at current state (e.g., 1 new pod created)
+    # Allows manual testing before continuing
+    ```
+    
+    **Resume Rollout:**
+    ```bash
+    kubectl rollout resume deployment/nginx-deployment
+    # Continues the paused rollout
+    ```
+    
+    ## Common Patterns
+    - Always check rollout status after triggering update: `kubectl rollout status`
+    - Use `--record` flag to track change-cause: `kubectl set image ... --record`
+    - Monitor application metrics during rollout (error rates, latency)
+    - Keep revision history limit appropriate for your rollback needs (default: 10)
+    - Test rollback procedures in staging before production emergencies
+    
+    ## Real-World Applications
+    - Emergency rollback when new version causes production errors
+    - Gradual rollout with pause for smoke testing
+    - Scaling up before expected traffic spike (Black Friday, product launch)
+    - Autoscaling for applications with variable load patterns
+    - Revision history for debugging "when did this change?"
+    
+    ## Common Pitfalls
+    - **Not monitoring during rollout**: Always watch `kubectl rollout status` to catch failures early
+    - **Forgetting --record flag**: Without it, CHANGE-CAUSE is empty in history
+    - **Rolling back too late**: Monitor metrics immediately after deployment to detect issues
+    - **Exceeding revision limit**: Old revisions are pruned, can't rollback beyond limit
+    - **Manual pod deletion during rollout**: Deployment controller recreates them, doesn't stop rollout
+  
+  steps: null
+  hints: null
+
+# ===== QUIZ CONFIGURATION (Public - NO answers) =====
+quizzes:
+  - id: "q1"
+    question: "Which command shows the rollout history of a deployment?"
+    options:
+      - id: "a"
+        text: "kubectl get deployment history"
+      - id: "b"
+        text: "kubectl rollout history deployment/deployment-name"
+      - id: "c"
+        text: "kubectl describe deployment deployment-name"
+      - id: "d"
+        text: "kubectl logs deployment/deployment-name"
+  
+  - id: "q2"
+    question: "How do you rollback a deployment to the previous version?"
+    options:
+      - id: "a"
+        text: "kubectl delete deployment deployment-name"
+      - id: "b"
+        text: "kubectl rollout undo deployment/deployment-name"
+      - id: "c"
+        text: "kubectl rollback deployment deployment-name"
+      - id: "d"
+        text: "kubectl revert deployment/deployment-name"
+  
+  - id: "q3"
+    question: "What command monitors the progress of a rolling update?"
+    options:
+      - id: "a"
+        text: "kubectl watch deployment deployment-name"
+      - id: "b"
+        text: "kubectl rollout status deployment/deployment-name"
+      - id: "c"
+        text: "kubectl get pods -w"
+      - id: "d"
+        text: "kubectl monitor deployment deployment-name"
+  
+  - id: "q4"
+    question: "How can you scale a deployment to 5 replicas?"
+    options:
+      - id: "a"
+        text: "kubectl scale deployments/deployment-name --replicas=5"
+      - id: "b"
+        text: "kubectl resize deployment deployment-name 5"
+      - id: "c"
+        text: "kubectl set replicas deployment-name=5"
+      - id: "d"
+        text: "kubectl update deployment deployment-name --count=5"
+  
+  - id: "q5"
+    question: "What happens during a deployment rollback?"
+    options:
+      - id: "a"
+        text: "All pods are deleted and recreated"
+      - id: "b"
+        text: "The deployment reverts to the previous revision's pod template and performs a rolling update"
+      - id: "c"
+        text: "The cluster is restarted"
+      - id: "d"
+        text: "Only the newest pod is deleted"
+  
+  - id: "q6"
+    question: "Which command updates a deployment's container image?"
+    options:
+      - id: "a"
+        text: "kubectl update image deployment/name container=image:tag"
+      - id: "b"
+        text: "kubectl set image deployment/deployment-name container-name=image:tag"
+      - id: "c"
+        text: "kubectl change deployment deployment-name image:tag"
+      - id: "d"
+        text: "kubectl apply image deployment/name image:tag"
+
+# ===== NO EDITOR FOR QUIZZES =====
+editor_config: null
+
+# ===== PRIVATE DATA (Answer Keys - NEVER exposed) =====
+_solution:
+  quiz_answers:
+    q1: "b"
+    q2: "b"
+    q3: "b"
+    q4: "a"
+    q5: "b"
+    q6: "b"
+  
+  quiz_explanations:
+    q1: "The command 'kubectl rollout history deployment/deployment-name' shows the revision history of a deployment. Each time you update the pod template, a new revision is created. You can see all revisions and optionally view details of a specific revision with '--revision=N'."
+    q2: "The command 'kubectl rollout undo deployment/deployment-name' rolls back a deployment to the previous revision. This is useful when you discover issues after an update. You can also specify a particular revision with '--to-revision=N' to rollback to a specific version."
+    q3: "The command 'kubectl rollout status deployment/deployment-name' monitors the progress of a rollout. It shows the current state of the deployment update and waits until the rollout completes or fails. The output will show 'deployment successfully rolled out' when complete."
+    q4: "The command 'kubectl scale deployments/deployment-name --replicas=5' scales a deployment to 5 replicas. You can also use 'kubectl scale -f deployment.yaml --replicas=5' to scale using the definition file, or edit the deployment directly with 'kubectl edit deployment deployment-name' and change the replicas field."
+    q5: "During a rollback, the deployment reverts to the previous revision's pod template and performs a rolling update to that version. This means old pods are gradually replaced with pods from the previous revision, maintaining availability. The rollback itself creates a new revision in the history."
+    q6: "The command 'kubectl set image deployment/deployment-name container-name=new-image:tag' updates a container's image in a deployment. This triggers a rolling update to the new image. For example: 'kubectl set image deployment/nginx-deployment nginx=nginx:1.27' updates the nginx container to version 1.27."
+  
+  code_solution: null
+  validation_script: null

@@ -1,0 +1,222 @@
+# ===== METADATA (Public - LearningUnit) =====
+metadata:
+  slug: "kubernetes-deployment-canary-pattern"
+  title: "Canary Deployment with Traffic Split"
+  topic: "Deployment"
+  order_index: 8
+  type: "coding"
+  difficulty: "advanced"
+  
+  description: |
+    Implement a complete canary deployment pattern with controlled traffic distribution between stable and canary versions using replica count ratios.
+    
+    **Focus**: Multi-deployment coordination, service selector design for traffic splitting, and gradual traffic shifting through replica count management.
+    
+    This advanced exercise demonstrates how to safely roll out new versions by sending a small percentage of traffic (20%) to a canary deployment while keeping most traffic on the stable version (80%). The critical insight is that the Service selector must only include common labels (`app: webapp`), NOT version-specific labels (`track: stable/canary`), to route traffic to both deployments. Traffic naturally splits based on pod count ratio: 8 stable pods + 2 canary pods = 80/20 distribution via round-robin load balancing. This pattern minimizes blast radius - if the canary has bugs, only 20% of users are affected, and you can instantly rollback by deleting the canary deployment.
+  
+  steps:
+    - "Create stable deployment with 8 replicas (nginx:1.26-alpine)"
+    - "Create canary deployment with 2 replicas (nginx:1.27-alpine)"
+    - "Configure both with app: webapp label plus unique track labels"
+    - "Create Service that selects ONLY app: webapp (not track or version)"
+    - "Verify traffic distributes ~80% stable, ~20% canary"
+    - "Test scaling canary to increase traffic percentage"
+  
+  hints:
+    - "Traffic split is determined by replica count ratio (8:2 = 80:20)"
+    - "Service selector must NOT include track or version labels"
+    - "Both deployments need app: webapp for service routing"
+    - "Use track: stable and track: canary to distinguish deployments"
+
+# ===== PUBLIC EDITOR CONFIG =====
+editor_config:
+  language: "yaml"
+  initial_code: |
+    # Exercise 3a: Stable Deployment (80% of traffic)
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: # TODO: Add deployment name
+      labels:
+        # TODO: Add deployment labels for filtering
+    spec:
+      replicas: # TODO: How many replicas for 80% traffic?
+      selector:
+        matchLabels:
+          # TODO: Add labels (must match template labels)
+      template:
+        metadata:
+          labels:
+            # TODO: Add labels (app, track, version)
+        spec:
+          containers:
+          - name: webapp
+            image: # TODO: Which nginx version for stable?
+            ports:
+            - containerPort: # TODO: What port does nginx use?
+              name: http
+    
+    ---
+    # Exercise 3b: Canary Deployment (20% of traffic)
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: # TODO: Add deployment name
+      labels:
+        # TODO: Add deployment labels for filtering
+    spec:
+      replicas: # TODO: How many replicas for 20% traffic?
+      selector:
+        matchLabels:
+          # TODO: Add labels (must match template labels)
+      template:
+        metadata:
+          labels:
+            # TODO: Add labels (app, track, version)
+        spec:
+          containers:
+          - name: webapp
+            image: # TODO: Which nginx version for canary?
+            ports:
+            - containerPort: # TODO: What port does nginx use?
+              name: http
+    
+    ---
+    # Exercise 3c: Service for Traffic Distribution
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: # TODO: Add service name
+    spec:
+      type: # TODO: What type for Minikube?
+      ports:
+      - port: # TODO: External port
+        targetPort: # TODO: Container port
+        name: http
+      selector:
+        # TODO: Add ONLY the common label that matches both stable and canary
+        # ⚠️ THE TRAP: Do NOT include track or version labels!
+
+# ===== PRIVATE DATA (UnitSolution - NEVER exposed) =====
+_solution:
+  code_solution: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: webapp-stable
+    spec:
+      replicas: 8  # 80% of total capacity (8 out of 10 pods)
+      selector:
+        matchLabels:
+          app: webapp
+          track: stable
+          version: "1.26"
+      template:
+        metadata:
+          labels:
+            app: webapp      # Common label for service routing
+            track: stable    # Distinguishes from canary
+            version: "1.26"  # Specific version identifier
+        spec:
+          containers:
+          - name: webapp
+            image: nginx:1.26-alpine
+            ports:
+            - containerPort: 80
+              name: http
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: webapp-canary
+    spec:
+      replicas: 2  # 20% of total capacity (2 out of 10 pods)
+      selector:
+        matchLabels:
+          app: webapp
+          track: canary
+          version: "1.27"
+      template:
+        metadata:
+          labels:
+            app: webapp      # Common label for service routing
+            track: canary    # Distinguishes from stable
+            version: "1.27"  # Specific version identifier
+        spec:
+          containers:
+          - name: webapp
+            image: nginx:1.27-alpine
+            ports:
+            - containerPort: 80
+              name: http
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: webapp
+      labels:
+        app: webapp
+    spec:
+      type: NodePort  # Minikube-compatible service type
+      ports:
+      - port: 80
+        targetPort: 80
+        name: http
+      selector:
+        app: webapp  # ✅ CRITICAL: Only common label, no track/version
+        # This allows service to route to BOTH stable and canary pods
+        # Traffic splits naturally based on replica count (8:2 = 80:20)
+  
+  validation_script: |
+    #!/bin/bash
+    # Apply all manifests
+    kubectl apply -f solution.yaml
+    
+    # Wait for both deployments to be ready
+    timeout=120
+    elapsed=0
+    while [ $elapsed -lt $timeout ]; do
+      stable_ready=$(kubectl get deployment webapp-stable -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+      canary_ready=$(kubectl get deployment webapp-canary -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+      
+      if [ "$stable_ready" = "8" ] && [ "$canary_ready" = "2" ]; then
+        echo "✓ Both deployments ready (stable: 8, canary: 2)"
+        break
+      fi
+      sleep 3
+      ((elapsed+=3))
+    done
+    
+    # Verify service endpoints include both deployments
+    endpoint_count=$(kubectl get endpoints webapp -o jsonpath='{.subsets[*].addresses[*].targetRef.name}' | wc -w)
+    
+    if [ "$endpoint_count" -eq "10" ]; then
+      echo "✓ Service has 10 endpoints (8 stable + 2 canary)"
+      
+      # Verify service selector is correct (only app label)
+      selector=$(kubectl get svc webapp -o jsonpath='{.spec.selector}')
+      
+      if echo "$selector" | grep -q '"app":"webapp"' && ! echo "$selector" | grep -q "track"; then
+        echo "✓ Service selector correctly configured (app only, no track/version)"
+        
+        # Verify labels on deployments
+        stable_track=$(kubectl get deployment webapp-stable -o jsonpath='{.spec.template.metadata.labels.track}')
+        canary_track=$(kubectl get deployment webapp-canary -o jsonpath='{.spec.template.metadata.labels.track}')
+        
+        if [ "$stable_track" = "stable" ] && [ "$canary_track" = "canary" ]; then
+          echo "✓ Deployments have correct track labels"
+          exit 0
+        fi
+      else
+        echo "✗ Service selector includes track/version labels (will route to only one deployment)"
+        exit 1
+      fi
+    fi
+    
+    echo "✗ Canary deployment validation failed"
+    kubectl get deployments -l app=webapp
+    kubectl get svc webapp -o yaml | grep -A 3 "selector:"
+    exit 1
+  
+  quiz_answers: null
+  quiz_explanations: null

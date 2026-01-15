@@ -1,0 +1,221 @@
+# ===== METADATA (Public - LearningUnit) =====
+metadata:
+  slug: "kubernetes-deployment-canary-practice"
+  title: "Practice: Canary Deployment Strategy"
+  topic: "Deployment"
+  order_index: 9
+  type: "coding"
+  difficulty: "advanced"
+  
+  description: |
+    Implement a production-ready canary deployment with gradual traffic shifting from stable to canary version, demonstrating the complete canary rollout lifecycle.
+    
+    **Focus**: Running stable and canary versions simultaneously with controlled traffic distribution based on replica counts, monitoring health, and progressively increasing canary exposure.
+    
+    This exercise demonstrates the full canary pattern where a small percentage of traffic is routed to a new version (canary) while most traffic stays on the stable version. The Service selector must only include common labels (`app: nginx`) to route to both deployments. Traffic splits naturally based on replica ratios: 9 stable + 1 canary = 90/10 split. As you gain confidence in the canary's stability (monitoring error rates, latency, resource usage), you gradually scale canary up and stable down (e.g., 5:5 for 50/50, then 1:9, then 0:10 for full rollout). This progressive exposure minimizes risk compared to all-at-once deployments.
+  
+  steps:
+    - "Deploy stable version with 9 replicas (nginx:1.26)"
+    - "Add labels: app=nginx, track=stable, version=1.26"
+    - "Create Service that selects ONLY app=nginx (critical!)"
+    - "Deploy canary version with 1 replica (nginx:1.27)"
+    - "Add labels: app=nginx, track=canary, version=1.27"
+    - "Verify Service routes to 10 total pods (9 stable + 1 canary)"
+    - "Test traffic distribution (~90% stable, ~10% canary)"
+    - "Practice scaling canary to increase traffic percentage"
+  
+  hints:
+    - "Service selector must NOT include track or version labels"
+    - "Traffic distribution = replica count ratio"
+    - "Use common label (app: nginx) in Service selector"
+    - "Track label (stable/canary) distinguishes deployments"
+    - "Scale canary to 5, stable to 5 for 50/50 traffic split"
+
+# ===== PUBLIC EDITOR CONFIG =====
+editor_config:
+  language: "yaml"
+  initial_code: |
+    # Stable Deployment (90% of traffic - 9 replicas)
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: nginx-stable
+    spec:
+      replicas: 9
+      selector:
+        matchLabels:
+          app: nginx
+          track: stable
+      template:
+        metadata:
+          labels:
+            app: nginx
+            track: stable
+            version: "1.26"
+        spec:
+          containers: 
+            - name: nginx
+              image: nginx:1.26-alpine
+              ports:
+                - name: http
+                  containerPort: 80
+    
+    ---
+    # Service (Routes to BOTH stable and canary)
+    apiVersion: v1
+    kind: Service
+    metadata: 
+      name: nginx-canary
+      labels: 
+        app: nginx
+    spec:
+      ports:
+        - name: http
+          port: 80
+          targetPort: 80
+      selector: 
+        app: nginx  # TODO: CRITICAL - only common label, no track/version!
+        # ⚠️ Do NOT add track: stable or traffic won't reach canary
+      type: NodePort
+    
+    ---
+    # Canary Deployment (10% of traffic - 1 replica)
+    # TODO: Create deployment with track: canary and version: "1.27"
+
+# ===== PRIVATE DATA (UnitSolution - NEVER exposed) =====
+_solution:
+  code_solution: |
+    # Stable Deployment (90% of traffic - 9 replicas)
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: nginx-stable
+    spec:
+      replicas: 9  # 90% of traffic with stable version
+      selector:
+        matchLabels:
+          app: nginx
+          track: stable
+      template:
+        metadata:
+          labels:
+            app: nginx
+            track: stable
+            version: "1.26"
+        spec:
+          containers: 
+            - name: nginx
+              image: nginx:1.26-alpine
+              ports:
+                - name: http
+                  containerPort: 80
+    
+    ---
+    # Service (Routes to BOTH stable and canary)
+    apiVersion: v1
+    kind: Service
+    metadata: 
+      name: nginx-canary
+      labels: 
+        app: nginx
+    spec:
+      ports:
+        - name: http
+          port: 80
+          targetPort: 80
+      selector: 
+        app: nginx  # Matches BOTH stable AND canary pods
+        # No 'track' label = traffic distributed to all pods
+      type: NodePort
+    
+    ---
+    # Canary Deployment (10% of traffic - 1 replica)
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: nginx-canary
+    spec:
+      replicas: 1  # 10% of traffic with canary version
+      selector:
+        matchLabels:
+          app: nginx
+          track: canary
+      template:
+        metadata:
+          labels:
+            app: nginx
+            track: canary
+            version: "1.27"
+        spec:
+          containers: 
+            - name: nginx
+              image: nginx:1.27-alpine
+              ports:
+                - name: http
+                  containerPort: 80
+  
+  validation_script: |
+    #!/bin/bash
+    # Apply all manifests
+    kubectl apply -f solution.yaml
+    
+    # Wait for both deployments
+    timeout=120
+    elapsed=0
+    while [ $elapsed -lt $timeout ]; do
+      stable_ready=$(kubectl get deployment nginx-stable -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+      canary_ready=$(kubectl get deployment nginx-canary -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+      
+      if [ "$stable_ready" = "9" ] && [ "$canary_ready" = "1" ]; then
+        echo "✓ Both deployments ready (stable: 9, canary: 1)"
+        break
+      fi
+      sleep 3
+      ((elapsed+=3))
+    done
+    
+    # Verify Service selector (critical check)
+    selector=$(kubectl get svc nginx-canary -o jsonpath='{.spec.selector}')
+    if echo "$selector" | grep -q '"app":"nginx"' && ! echo "$selector" | grep -q "track"; then
+      echo "✓ Service selector correct (app only, no track/version)"
+      
+      # Verify Service endpoints include both deployments
+      endpoint_count=$(kubectl get endpoints nginx-canary -o jsonpath='{.subsets[*].addresses[*].ip}' | wc -w)
+      
+      if [ "$endpoint_count" -eq "10" ]; then
+        echo "✓ Service has 10 endpoints (9 stable + 1 canary)"
+        
+        # Verify labels on both deployments
+        stable_track=$(kubectl get deployment nginx-stable -o jsonpath='{.spec.template.metadata.labels.track}')
+        canary_track=$(kubectl get deployment nginx-canary -o jsonpath='{.spec.template.metadata.labels.track}')
+        
+        if [ "$stable_track" = "stable" ] && [ "$canary_track" = "canary" ]; then
+          echo "✓ Deployments have correct track labels"
+          
+          # Test scaling for 50/50 split
+          kubectl scale deployment nginx-canary --replicas=5
+          kubectl scale deployment nginx-stable --replicas=5
+          sleep 15
+          
+          stable_scaled=$(kubectl get deployment nginx-stable -o jsonpath='{.status.readyReplicas}')
+          canary_scaled=$(kubectl get deployment nginx-canary -o jsonpath='{.status.readyReplicas}')
+          
+          if [ "$stable_scaled" = "5" ] && [ "$canary_scaled" = "5" ]; then
+            echo "✓ Successfully scaled to 50/50 traffic split"
+            exit 0
+          fi
+        fi
+      else
+        echo "✗ Expected 10 endpoints, got $endpoint_count (Service selector likely includes track label)"
+      fi
+    else
+      echo "✗ Service selector incorrect (should only include app: nginx)"
+      kubectl get svc nginx-canary -o yaml | grep -A 3 "selector:"
+    fi
+    
+    echo "✗ Canary deployment validation failed"
+    kubectl get deployments -l app=nginx
+    exit 1
+  
+  quiz_answers: null
+  quiz_explanations: null

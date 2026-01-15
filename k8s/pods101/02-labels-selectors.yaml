@@ -1,0 +1,215 @@
+# ===== METADATA (Public - LearningUnit) =====
+metadata:
+  slug: "kubernetes-labels-and-selectors"
+  title: "Labels and Selectors in Kubernetes"
+  topic: "Pods"
+  order_index: 2
+  type: "conceptual"
+  difficulty: "beginner"
+  
+  description: |
+    Master the use of labels and selectors for organizing, categorizing, and managing Kubernetes Pods at scale.
+    
+    ## Overview
+    Labels are key-value pairs attached to Kubernetes objects like Pods that enable flexible organization and selection. Selectors are query mechanisms that use labels to identify and group objects. Together, they form the foundation of how Kubernetes controllers (like ReplicaSets and Services) identify which Pods they should manage.
+    
+    ## Key Concepts
+    
+    ### Labels as Metadata Tags
+    Labels provide a simple but powerful way to organize Kubernetes objects:
+    
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: web-app-prod-1
+      labels:
+        app: web-app
+        environment: production
+        tier: frontend
+        version: v1.2.3
+    ```
+    
+    Each Pod can have multiple labels, allowing multi-dimensional categorization. Labels should be meaningful and consistent across your cluster.
+    
+    ### Label Selectors for Querying
+    
+    Selectors allow you to query and filter objects based on their labels:
+    
+    **Equality-based selectors**:
+    ```bash
+    kubectl get pods -l app=nginx
+    kubectl get pods -l environment=production,tier=frontend
+    ```
+    
+    **Set-based selectors**:
+    ```bash
+    kubectl get pods -l 'environment in (production, staging)'
+    kubectl get pods -l 'tier notin (backend)'
+    kubectl get pods -l app  # Pods that have the 'app' label
+    ```
+    
+    ### Controllers Use Selectors
+    
+    Kubernetes controllers use selectors to determine which Pods they manage:
+    
+    ```yaml
+    apiVersion: apps/v1
+    kind: ReplicaSet
+    metadata:
+      name: web-rs
+    spec:
+      replicas: 3
+      selector:
+        matchLabels:
+          app: web-app
+          tier: frontend
+      template:
+        metadata:
+          labels:
+            app: web-app
+            tier: frontend
+        spec:
+          containers:
+          - name: nginx
+            image: nginx:latest
+    ```
+    
+    The ReplicaSet will manage any Pod with `app=web-app` AND `tier=frontend` labels, whether the Pod was created by this ReplicaSet or already existed.
+    
+    **Important**: The `selector.matchLabels` must match the `template.metadata.labels`. If they don't match, Kubernetes will reject the ReplicaSet.
+    
+    ### Label Best Practices
+    
+    Use consistent label patterns across your organization:
+    - `app` or `app.kubernetes.io/name`: Application name
+    - `version` or `app.kubernetes.io/version`: Application version
+    - `environment`: prod, staging, dev
+    - `tier`: frontend, backend, cache
+    - `owner`: Team or person responsible
+    
+    ## Common Patterns
+    - Use labels to identify Pods by application, version, and environment
+    - Services use selectors to route traffic to matching Pods
+    - Deployments and ReplicaSets use selectors to manage Pod replicas
+    - Network policies use selectors to define traffic rules
+    - Node affinity uses node labels to schedule Pods on specific nodes
+    
+    ## Real-World Applications
+    - **Blue-green deployments**: Use version labels (v1, v2) and switch Service selector
+    - **Canary releases**: Route small percentage of traffic to Pods with new version label
+    - **Multi-tenancy**: Use namespace and team labels to organize resources
+    - **Cost allocation**: Label resources by project or cost center for billing
+    - **Environment isolation**: Separate production and staging Pods with environment labels
+    
+    ## Common Pitfalls
+    - **Selector mismatch**: ReplicaSet selector must match the Pod template labels exactly, or it will be rejected
+    - **Overly specific selectors**: Too many labels in selector make it hard to match
+    - **No labels**: Pods without labels can't be managed by controllers
+    - **Label collisions**: Two controllers with overlapping selectors might fight over the same Pods
+    - **Immutable selectors**: Some controller selectors (like Deployments) are immutable after creation
+  
+  steps: null
+  hints: null
+
+# ===== QUIZ CONFIGURATION (Public - NO answers) =====
+quizzes:
+  - id: "q1"
+    question: "What are labels in Kubernetes?"
+    options:
+      - id: "a"
+        text: "Commands used to execute operations on Pods"
+      - id: "b"
+        text: "Key-value pairs attached to objects for identification and categorization"
+      - id: "c"
+        text: "Network policies that control traffic"
+      - id: "d"
+        text: "Volume mount points in containers"
+  
+  - id: "q2"
+    question: "Which kubectl command fetches all Pods with the label 'app=nginx'?"
+    options:
+      - id: "a"
+        text: "kubectl get pods --label app=nginx"
+      - id: "b"
+        text: "kubectl get pods -l app=nginx"
+      - id: "c"
+        text: "kubectl get pods --filter app=nginx"
+      - id: "d"
+        text: "kubectl select pods app=nginx"
+  
+  - id: "q3"
+    question: "In a ReplicaSet, what does the 'selector.matchLabels' field do?"
+    options:
+      - id: "a"
+        text: "Specifies which container image to use"
+      - id: "b"
+        text: "Defines network ports to expose"
+      - id: "c"
+        text: "Identifies which Pods the ReplicaSet should manage based on their labels"
+      - id: "d"
+        text: "Sets resource limits for the Pods"
+  
+  - id: "q4"
+    question: "Can a single Pod have multiple labels?"
+    options:
+      - id: "a"
+        text: "No, each Pod can only have one label"
+      - id: "b"
+        text: "Yes, Pods can have multiple labels for different categorization purposes"
+      - id: "c"
+        text: "Only if the Pod has multiple containers"
+      - id: "d"
+        text: "Labels are not supported on Pods"
+  
+  - id: "q5"
+    question: "What happens if a ReplicaSet's selector doesn't match any existing Pods?"
+    options:
+      - id: "a"
+        text: "The ReplicaSet will fail to create"
+      - id: "b"
+        text: "Kubernetes will automatically assign labels to existing Pods"
+      - id: "c"
+        text: "The ReplicaSet will create new Pods with labels matching the selector"
+      - id: "d"
+        text: "The ReplicaSet will wait indefinitely for matching Pods"
+  
+  - id: "q6"
+    question: "What is a common pitfall when working with ReplicaSet selectors?"
+    options:
+      - id: "a"
+        text: "Using too few labels in the selector"
+      - id: "b"
+        text: "The selector.matchLabels doesn't match the Pod template labels"
+      - id: "c"
+        text: "Labels can only be alphanumeric characters"
+      - id: "d"
+        text: "ReplicaSets don't support label selectors"
+      - id: "c"
+        text: "The ReplicaSet will create new Pods with matching labels"
+      - id: "d"
+        text: "The cluster will shut down"
+
+# ===== NO EDITOR FOR QUIZZES =====
+editor_config: null
+
+# ===== PRIVATE DATA (Answer Keys - NEVER exposed) =====
+_solution:
+  quiz_answers:
+    q1: "b"
+    q2: "b"
+    q3: "c"
+    q4: "b"
+    q5: "c"
+    q6: "b"
+  
+  quiz_explanations:
+    q1: "Labels are key-value pairs that can be attached to Kubernetes objects like Pods for identification, organization, and categorization. Examples include 'app: nginx' or 'environment: production'."
+    q2: "The kubectl get pods -l command uses the -l or --selector flag to filter Pods based on label selectors. For example, 'kubectl get pods -l app=nginx' returns all Pods labeled with app=nginx."
+    q3: "The selector.matchLabels field in a ReplicaSet defines which Pods the ReplicaSet should manage. The ReplicaSet will only control Pods that have labels matching this selector, enabling precise Pod management."
+    q4: "Yes, Pods can have multiple labels for flexible categorization. For example, a Pod can have both 'app: nginx' and 'environment: production' labels, allowing it to be selected by different criteria in various contexts."
+    q5: "If a ReplicaSet's selector doesn't match any existing Pods, the ReplicaSet will create new Pods according to its template specification with labels that match the selector. This is how ReplicaSets ensure the desired number of replicas are running."
+    q6: "A common pitfall is when the selector.matchLabels in a ReplicaSet doesn't exactly match the labels defined in the Pod template (spec.template.metadata.labels). Kubernetes will reject this configuration to prevent management issues."
+  
+  code_solution: null
+  validation_script: null

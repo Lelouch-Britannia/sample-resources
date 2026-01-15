@@ -1,0 +1,263 @@
+# ===== METADATA (Public - LearningUnit) =====
+metadata:
+  slug: "kubernetes-deployment-strategies"
+  title: "Deployment Strategies: Rolling, Blue/Green, Canary"
+  topic: "Deployment"
+  order_index: 2
+  type: "conceptual"
+  difficulty: "intermediate"
+  
+  description: |
+    Master the three production-grade deployment strategies for safely releasing application updates in Kubernetes with different risk profiles and rollback capabilities.
+    
+    ## Overview
+    Choosing the right deployment strategy depends on your application's requirements for availability, resource constraints, rollback speed, and acceptable risk during updates. Each strategy offers different trade-offs between safety, speed, and resource usage. Understanding these patterns enables you to minimize downtime and blast radius when deploying new versions.
+    
+    ## Key Concepts
+    
+    ### Strategy 1: Rolling Update (Default)
+    The "safe" gradual replacement strategy that ensures zero downtime by incrementally replacing old pods with new ones.
+    
+    **How It Works:**
+    ```yaml
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1        # Can create 1 extra pod above desired count
+        maxUnavailable: 1  # Can accept 1 pod being down
+    ```
+    
+    With 3 replicas, maxSurge: 1, maxUnavailable: 1:
+    1. Kubernetes creates 1 new pod (total: 4 running)
+    2. New pod becomes ready, terminates 1 old pod (total: 3 running)
+    3. Creates another new pod (total: 4)
+    4. Repeats until all pods are new version
+    
+    **Key Parameters:**
+    - **maxSurge**: Maximum pods above desired count during update (absolute number or percentage)
+    - **maxUnavailable**: Maximum pods that can be unavailable during update
+    - Constraint: maxSurge + maxUnavailable must be > 0
+    
+    **Pros:** Zero downtime, gradual rollout limits blast radius  
+    **Cons:** Requires extra resources (surge pods), both versions run simultaneously (potential compatibility issues)
+    
+    ### Strategy 2: Blue/Green Deployment
+    Instant cutover strategy using two complete environments - only one serves traffic at a time.
+    
+    **How It Works:**
+    ```yaml
+    # Blue Deployment (current production)
+    metadata:
+      name: nginx-1.26
+    spec:
+      replicas: 3
+      template:
+        metadata:
+          labels:
+            version: "1.26"
+    
+    # Service initially points to Blue
+    spec:
+      selector:
+        version: "1.26"  # Routes to Blue pods
+    
+    # After deploying Green, switch instantly
+    kubectl patch svc nginx -p '{"spec":{"selector":{"version":"1.27"}}}'
+    ```
+    
+    **Workflow:**
+    1. Blue environment runs production (nginx:1.26)
+    2. Deploy Green environment with new version (nginx:1.27)
+    3. Test Green in isolation while Blue serves traffic
+    4. Switch Service selector from Blue to Green (instant cutover)
+    5. Keep Blue running for quick rollback
+    
+    **Important**: Both environments must have a common label (e.g., `name: nginx`) and a version-specific label (e.g., `version: "1.26"`). The Service selector uses the version label to control routing.
+    
+    **Pros:** Instant cutover and rollback (just update Service), full testing before traffic switch, clean separation  
+    **Cons:** Requires 2x infrastructure during deployment, database schema must be compatible with both versions
+    
+    ### Strategy 3: Canary Deployment
+    Gradual traffic exposure strategy using replica count ratios to test new versions with a small user subset.
+    
+    **How It Works:**
+    ```yaml
+    # Stable Deployment (90% of traffic - 9 replicas)
+    metadata:
+      name: nginx-stable
+    spec:
+      replicas: 9
+      template:
+        metadata:
+          labels:
+            app: nginx
+            track: stable
+    
+    # Canary Deployment (10% of traffic - 1 replica)
+    metadata:
+      name: nginx-canary
+    spec:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: nginx
+            track: canary
+    
+    # Service routes to BOTH (using common label only)
+    spec:
+      selector:
+        app: nginx  # No track label - routes to all matching pods
+    ```
+    
+    **Traffic Distribution Magic:**
+    Kubernetes Services use round-robin load balancing across all matching endpoints. With 9 stable pods + 1 canary pod = 10 total endpoints, traffic naturally splits 90/10.
+    
+    **Gradual Rollout Process:**
+    1. Deploy stable version with most replicas (9 pods)
+    2. Deploy canary version with few replicas (1 pod)
+    3. Monitor canary metrics (errors, latency, resource usage)
+    4. If healthy, gradually increase canary replicas while decreasing stable
+    5. If issues detected, delete canary deployment instantly
+    
+    **Critical**: Service selector must ONLY include common labels (app: nginx), NOT version-specific labels (track: stable/canary). Otherwise, the Service would only route to one deployment.
+    
+    **Pros:** Gradual risk exposure, easy rollback (delete canary), real-user testing  
+    **Cons:** Requires traffic monitoring, uneven traffic distribution with small pod counts, longer deployment time
+    
+    ## Strategy Comparison Table
+    
+    | Aspect | Rolling Update | Blue/Green | Canary |
+    |--------|----------------|------------|--------|
+    | **Rollback Speed** | Gradual (new rollout) | Instant (update selector) | Instant (delete canary) |
+    | **Resource Cost** | +1 surge pod | 2x during deployment | 1.1x - 2x (configurable) |
+    | **Downtime** | Zero | Zero | Zero |
+    | **Blast Radius** | Medium (all users) | High (all users after switch) | Low (few users initially) |
+    | **Complexity** | Low | Medium | Medium-High |
+    | **Best For** | General updates | High-risk releases | User-facing features |
+    
+    ## Real-World Applications
+    - **Rolling Update**: Routine microservice updates, security patches, minor feature releases
+    - **Blue/Green**: Database migrations, major version upgrades, infrastructure changes
+    - **Canary**: Frontend changes, algorithm updates, feature flags, A/B testing scenarios
+    
+    ## Common Pitfalls
+    - **Rolling Update**: Forgetting to set resource limits (maxSurge can exhaust cluster capacity)
+    - **Blue/Green**: Database schema incompatibility between versions during coexistence period
+    - **Canary**: Including version labels in Service selector (prevents traffic split)
+    - **All Strategies**: Not monitoring metrics during rollout to detect issues early
+  
+  steps: null
+  hints: null
+
+# ===== QUIZ CONFIGURATION (Public - NO answers) =====
+quizzes:
+  - id: "q1"
+    question: "What is the default deployment strategy in Kubernetes?"
+    options:
+      - id: "a"
+        text: "Blue/Green"
+      - id: "b"
+        text: "Canary"
+      - id: "c"
+        text: "RollingUpdate"
+      - id: "d"
+        text: "Recreate"
+  
+  - id: "q2"
+    question: "In a Rolling Update, what does 'maxSurge: 1' mean?"
+    options:
+      - id: "a"
+        text: "Maximum 1 pod can be unavailable during update"
+      - id: "b"
+        text: "Can create 1 extra pod above the desired count during update"
+      - id: "c"
+        text: "Update 1 pod per minute"
+      - id: "d"
+        text: "Maximum 1 concurrent update allowed"
+  
+  - id: "q3"
+    question: "How does Blue/Green deployment achieve instant cutover?"
+    options:
+      - id: "a"
+        text: "By deleting all old pods at once"
+      - id: "b"
+        text: "By updating the Service selector to point to the new version's pods"
+      - id: "c"
+        text: "By scaling old deployment to 0 replicas"
+      - id: "d"
+        text: "By restarting all pods simultaneously"
+  
+  - id: "q4"
+    question: "In a Canary deployment, how is traffic distributed between stable and canary versions?"
+    options:
+      - id: "a"
+        text: "50/50 split always"
+      - id: "b"
+        text: "Based on pod replica count ratio (e.g., 9 stable + 1 canary = 90/10 split)"
+      - id: "c"
+        text: "Random selection"
+      - id: "d"
+        text: "Only new users get canary version"
+  
+  - id: "q5"
+    question: "What is the main disadvantage of Rolling Update strategy?"
+    options:
+      - id: "a"
+        text: "Causes downtime"
+      - id: "b"
+        text: "Requires extra resources during update (running more pods temporarily)"
+      - id: "c"
+        text: "Cannot rollback"
+      - id: "d"
+        text: "Deletes all data"
+  
+  - id: "q6"
+    question: "Which deployment strategy provides the fastest rollback capability?"
+    options:
+      - id: "a"
+        text: "Rolling Update"
+      - id: "b"
+        text: "Canary"
+      - id: "c"
+        text: "Blue/Green (just update Service selector back)"
+      - id: "d"
+        text: "All strategies have the same rollback speed"
+  
+  - id: "q7"
+    question: "In a Canary deployment, what should the Service selector include?"
+    options:
+      - id: "a"
+        text: "Only the stable version label (e.g., track: stable)"
+      - id: "b"
+        text: "Only the canary version label (e.g., track: canary)"
+      - id: "c"
+        text: "Only the common label shared by both versions (e.g., app: nginx)"
+      - id: "d"
+        text: "All labels from both deployments"
+
+# ===== NO EDITOR FOR QUIZZES =====
+editor_config: null
+
+# ===== PRIVATE DATA (Answer Keys - NEVER exposed) =====
+_solution:
+  quiz_answers:
+    q1: "c"
+    q2: "b"
+    q3: "b"
+    q4: "b"
+    q5: "b"
+    q6: "c"
+    q7: "c"
+  
+  quiz_explanations:
+    q1: "RollingUpdate is the default deployment strategy in Kubernetes. It ensures zero downtime by gradually replacing old pods with new ones. The strategy can be explicitly set with 'strategy.type: RollingUpdate' in the Deployment spec."
+    q2: "maxSurge specifies the maximum number of pods that can be created above the desired replica count during an update. maxSurge: 1 means if you have 3 desired replicas, you can temporarily have 4 pods running (3 desired + 1 surge) during the update process."
+    q3: "Blue/Green deployment achieves instant cutover by updating the Service selector. Initially, the Service points to Blue pods (version: 1.26). When you're ready to switch, you patch the Service selector to point to Green pods (version: 1.27). This redirects all traffic instantly without pod restarts."
+    q4: "In a Canary deployment, traffic is distributed based on the replica count ratio. With 9 stable pods and 1 canary pod (total 10), approximately 90% of traffic goes to stable and 10% to canary. The Service uses round-robin load balancing across all matching endpoints, naturally creating this distribution."
+    q5: "The main disadvantage of Rolling Update is that it requires extra resources during the update. With maxSurge configured, you temporarily run more pods than desired. If your cluster is at capacity, the update might get stuck waiting for resources. However, it provides zero downtime for users."
+    q6: "Blue/Green provides the fastest rollback. Since both Blue and Green environments are fully deployed and running, rollback is as simple as updating the Service selector back to the Blue version. This takes seconds. Rolling Update and Canary require creating pods or scaling, which takes longer."
+    q7: "In a Canary deployment, the Service selector should only include the common label shared by both stable and canary deployments (e.g., app: nginx). If you include track: stable or track: canary, the Service would only route to one deployment, defeating the purpose of canary testing. The common label allows traffic to distribute to all matching pods."
+  
+  code_solution: null
+  validation_script: null

@@ -1,0 +1,198 @@
+# ===== METADATA (Public - LearningUnit) =====
+metadata:
+  slug: "kubernetes-pods-fundamentals"
+  title: "Kubernetes Pods: Core Concepts"
+  topic: "Pods"
+  order_index: 1
+  type: "conceptual"
+  difficulty: "beginner"
+  
+  description: |
+    Learn the fundamental concepts of Kubernetes Pods and understand why Kubernetes uses Pods as the smallest deployable unit instead of deploying containers directly.
+    
+    ## Overview
+    Kubernetes Pods are the foundational unit for all higher-level Kubernetes objects. A Pod wraps one or more containers and provides an abstraction layer that contains management properties beyond what a raw container provides. You create Pods using `kubectl` commands or YAML/JSON manifests, and Kubernetes will attempt to restart failing Pods automatically.
+    
+    ## Key Concepts
+    
+    ### Pods as an Abstraction Layer
+    While it might seem simpler to deploy containers directly, Kubernetes uses Pods to add an abstraction layer that solves several problems:
+    
+    **Container Runtime Flexibility**: A container is a specific entity that might be a Docker container, a rkt container, or a VM managed by Virtlet. Each has different requirements. By using Pods, Kubernetes doesn't overload the container concept with Kubernetes-specific properties.
+    
+    **Management Properties**: Kubernetes needs additional information beyond what a container provides:
+    - **Restart policies** that define what to do when a container terminates
+    - **Liveness probes** that detect if a process is still alive from the application's perspective (e.g., a web server responding to HTTP requests)
+    - **Readiness probes** that determine when a container is ready to accept traffic
+    
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: webserver
+    spec:
+      restartPolicy: Always  # Kubernetes-specific property
+      containers:
+      - name: nginx
+        image: nginx:latest
+        livenessProbe:       # Application health check
+          httpGet:
+            path: /
+            port: 80
+    ```
+    
+    ### Why Multi-Container Pods?
+    
+    Containers in a Pod run on a "logical host" and share several critical namespaces:
+    - **Network namespace**: Same IP address and port space
+    - **IPC namespace**: Can use inter-process communication
+    - **Shared volumes**: Access to the same storage
+    
+    This sharing enables:
+    - **Efficient communication** between containers (via localhost)
+    - **Data locality** for tightly coupled processes
+    - **Single-unit management** of related containers
+    
+    ```yaml
+    # Multi-container Pod example
+    spec:
+      containers:
+      - name: app
+        image: myapp:latest
+        ports:
+        - containerPort: 8080
+      - name: sidecar
+        image: logger:latest
+        # Can access app via localhost:8080
+    ```
+    
+    ### The "One Process Per Container" Principle
+    
+    **Why not put everything in one container?**
+    
+    Using multiple containers instead of cramming processes into one container provides:
+    - **Easier troubleshooting**: Logs from different processes don't mix
+    - **Better lifecycle management**: Easier to handle zombie processes when parent dies
+    - **Software decoupling**: Dependencies and versions can be managed independently
+    - **Reusability**: Containers can be reused across teams and applications
+    
+    **Important**: While containers share the same network namespace, each should run a single primary process.
+    
+    ## Common Patterns
+    - Single-container Pods for simple applications (web servers, APIs)
+    - Sidecar pattern: Helper container alongside main application (logging, monitoring)
+    - Adapter pattern: Container that transforms data for the main application
+    - Ambassador pattern: Proxy container that handles external connections
+    
+    ## Real-World Applications
+    - Web application with local cache (nginx + redis in same Pod)
+    - Application with log aggregator sidecar (app + fluentd)
+    - Service mesh proxies (app + envoy sidecar)
+    - Data processing pipelines with multiple stages
+    
+    ## Common Pitfalls
+    - **Overusing multi-container Pods**: Not every related container needs to be in the same Pod. Use separate Pods if containers can be scaled independently.
+    - **Ignoring resource limits**: Containers in a Pod share the same node resources. Set appropriate CPU/memory limits.
+    - **Port conflicts**: Containers in the same Pod share the port space. Two containers cannot both listen on port 8080.
+    - **Debugging issues**: Use `kubectl describe pod <name>` when a Pod fails to start indefinitely to see error details.
+  
+  steps: null
+  hints: null
+
+# ===== QUIZ CONFIGURATION (Public - NO answers) =====
+quizzes:
+  - id: "q1"
+    question: "What is a Kubernetes Pod?"
+    options:
+      - id: "a"
+        text: "A single Docker container running in Kubernetes"
+      - id: "b"
+        text: "The smallest deployable unit that can host one or more containers"
+      - id: "c"
+        text: "A virtual machine that runs containers"
+      - id: "d"
+        text: "A configuration file for Kubernetes resources"
+  
+  - id: "q2"
+    question: "Why does Kubernetes use a Pod as the smallest deployable unit instead of a single container?"
+    options:
+      - id: "a"
+        text: "To make Kubernetes more complex and enterprise-ready"
+      - id: "b"
+        text: "To add an abstraction layer for managing containers with additional properties like restart policies and liveness probes"
+      - id: "c"
+        text: "Because Docker requires it"
+      - id: "d"
+        text: "To increase resource consumption"
+  
+  - id: "q3"
+    question: "What do containers within the same Pod share?"
+    options:
+      - id: "a"
+        text: "Only the same CPU resources"
+      - id: "b"
+        text: "Network namespace (IP address and port space), IPC namespace, and volumes"
+      - id: "c"
+        text: "Only storage volumes"
+      - id: "d"
+        text: "Nothing - they are completely isolated"
+  
+  - id: "q4"
+    question: "Which statement is TRUE about multi-container Pods?"
+    options:
+      - id: "a"
+        text: "Each container in a Pod gets its own unique IP address"
+      - id: "b"
+        text: "Containers in a Pod can communicate via localhost as if on the same host"
+      - id: "c"
+        text: "Multi-container Pods are not recommended by Kubernetes"
+      - id: "d"
+        text: "Containers in a Pod cannot share volumes"
+  
+  - id: "q5"
+    question: "Why is it better to use multiple containers instead of one container with multiple processes?"
+    options:
+      - id: "a"
+        text: "Multiple containers use less memory"
+      - id: "b"
+        text: "It's easier to troubleshoot, manage lifecycle, and reuse containers independently"
+      - id: "c"
+        text: "Kubernetes doesn't support multiple processes in one container"
+      - id: "d"
+        text: "Multiple containers run faster"
+  
+  - id: "q6"
+    question: "What command would you use to diagnose why a Pod fails to start?"
+    options:
+      - id: "a"
+        text: "kubectl logs <pod-name>"
+      - id: "b"
+        text: "kubectl exec <pod-name>"
+      - id: "c"
+        text: "kubectl describe pod <pod-name>"
+      - id: "d"
+        text: "kubectl delete pod <pod-name>"
+
+# ===== NO EDITOR FOR QUIZZES =====
+editor_config: null
+
+# ===== PRIVATE DATA (Answer Keys - NEVER exposed) =====
+_solution:
+  quiz_answers:
+    q1: "b"
+    q2: "b"
+    q3: "b"
+    q4: "b"
+    q5: "b"
+    q6: "c"
+  
+  quiz_explanations:
+    q1: "A Kubernetes Pod is the smallest deployable unit in Kubernetes that can host one or more containers. It's not limited to a single container and provides an abstraction layer over the actual container runtime (Docker, rkt, etc.)."
+    q2: "Kubernetes uses Pods as an abstraction layer to add additional properties needed for container management, such as restart policies, liveness probes, and readiness checks. This avoids overloading the existing container concept with Kubernetes-specific properties."
+    q3: "Containers within the same Pod share the network namespace (same IP address and port space), IPC namespace, and can share volumes. This enables efficient communication and data locality between tightly coupled containers."
+    q4: "Containers in the same Pod use the same network namespace, which means they share the same IP address and can communicate via localhost (127.0.0.1) as if they were running on the same physical host. This makes inter-container communication very efficient."
+    q5: "Following the 'one process per container' principle makes troubleshooting easier (logs don't mix), simplifies process lifecycle management (handling zombie processes), enables software decoupling (independent dependencies), and allows containers to be reused across different applications and teams."
+    q6: "The kubectl describe pod command provides detailed information about a Pod's state, including events that show why it failed to start. This is the primary diagnostic tool for Pod startup failures, showing error messages, failed health checks, and scheduling issues."
+  
+  code_solution: null
+  validation_script: null
