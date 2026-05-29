@@ -1,0 +1,7 @@
+{
+  "slug": "replicaset101",
+  "name": "ReplicaSet 101",
+  "order": 2,
+  "icon": "🔄",
+  "course_slug": "kubernetes-fundamentals"
+}

@@ -1,0 +1,7 @@
+{
+  "slug": "deployment101",
+  "name": "Deployment 101",
+  "order": 3,
+  "icon": "🚀",
+  "course_slug": "kubernetes-fundamentals"
+}

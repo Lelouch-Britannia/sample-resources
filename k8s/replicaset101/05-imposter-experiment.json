@@ -1,0 +1,31 @@
+{
+  "slug": "kubernetes-replicaset-label-adoption",
+  "title": "Label Adoption: The Imposter Experiment",
+  "order_index": 5,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Create a scenario where a ReplicaSet adopts an existing Pod with matching labels but a different container image - demonstrating why you should never create bare Pods with labels matching a controller's selector.\n\n**Focus**: Proving that Kubernetes controllers rely on **labels**, not creation history or image consistency.\n\nThis \"orphan adoption\" experiment recreates the exact scenario warned about in ReplicaSet best practices. When you create a bare Pod (not managed by any controller) with a label that matches a ReplicaSet's selector, the ReplicaSet will automatically adopt it - even if that Pod runs a completely different application.\n\n**The Experiment Steps**:\n1. Create a standalone Pod running Apache (httpd) with label `tier: frontend`\n2. Create a ReplicaSet with `replicas: 3` that selects `tier: frontend` and uses nginx in its template\n3. Observe: ReplicaSet adopts the Apache Pod and creates only 2 new nginx Pods (total 3)\n4. Result: You have 1 Pod running Apache, 2 Pods running nginx - inconsistent cluster state!\n\n**Real-World Consequences**:\n- Load balancers send traffic to both Apache and nginx Pods\n- Debugging becomes difficult (\"Why is one Pod behaving differently?\")\n- If you scale to 2 replicas, ReplicaSet might keep Apache and delete nginx Pods\n- The adopted Pod doesn't get updated when you change the ReplicaSet template\n\n**The Fix**: Delete the imposter Pod. The ReplicaSet will create a replacement using the correct nginx image from its template.",
+  "steps": [
+    "Create standalone Pod named 'imposter-pod' with httpd:alpine image",
+    "Add label tier: frontend to the imposter pod",
+    "Apply the imposter pod first",
+    "Create ReplicaSet 'frontend-manager' with 3 replicas",
+    "Configure selector to match tier: frontend",
+    "Set template to use nginx:alpine image",
+    "Observe the ReplicaSet adopting the Apache pod"
+  ],
+  "hints": [
+    "Apply the standalone Pod BEFORE applying the ReplicaSet",
+    "The ReplicaSet will only create 2 new pods since it adopts the existing one",
+    "Check pod images with: kubectl get pods -o wide",
+    "Delete the imposter pod to see it replaced with the correct nginx image"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# Step 1: The Imposter Pod (Apache)\napiVersion: v1\nkind: Pod\nmetadata:\n  name: imposter-pod\n  labels:\n    tier: frontend  # TODO: This label will trick the ReplicaSet\nspec:\n  containers:\n  - name: imposter-container\n    image: httpd:latest\n\n---\n# Step 2: The Manager (Nginx)\napiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: frontend-manager\n  labels:\n    tier: frontend\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      tier: frontend  # TODO: This will match the imposter\n  template:\n    metadata:\n      name: frontend-pod\n      labels:\n        tier: frontend\n    spec:\n      containers:\n      - name: frontend-container\n        image: nginx:latest\n"
+  },
+  "_solution": {
+    "code_solution": "# Step 1: The Imposter Pod (Apache)\napiVersion: v1\nkind: Pod\nmetadata:\n  name: imposter-pod\n  labels:\n    tier: frontend # <--- The Bait\nspec:\n  containers:\n  - name: imposter\n    image: httpd:alpine\n---\n# Step 2: The Manager (Nginx)\napiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: frontend-manager\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      tier: frontend # <--- The Trap\n  template:\n    metadata:\n      labels:\n        tier: frontend\n    spec:\n      containers:\n      - name: web\n        image: nginx:alpine\n",
+    "validation_script": "#!/bin/bash\n# Apply the manifest\nkubectl apply -f solution.yaml\n\n# Wait for ReplicaSet to stabilize\nsleep 10\n\n# Check total number of pods with the label\ntotal_pods=$(kubectl get pods -l tier=frontend --no-headers | wc -l)\n\nif [ \"$total_pods\" -ne \"3\" ]; then\n  echo \"✗ Expected 3 total pods, got $total_pods\"\n  exit 1\nfi\n\n# Check if imposter pod exists with httpd image\nimposter_image=$(kubectl get pod imposter-pod -o jsonpath='{.spec.containers[0].image}' 2>/dev/null)\n\nif echo \"$imposter_image\" | grep -q \"httpd\"; then\n  echo \"✓ Imposter pod adopted by ReplicaSet (running httpd)\"\n  \n  # Verify ReplicaSet only created 2 additional pods\n  rs_pods=$(kubectl get pods -l tier=frontend --no-headers | grep -v imposter-pod | wc -l)\n  if [ \"$rs_pods\" -eq \"2\" ]; then\n    echo \"✓ ReplicaSet created only 2 new pods (adopted 1 existing)\"\n    \n    # Delete imposter and verify replacement\n    kubectl delete pod imposter-pod\n    sleep 5\n    \n    # Check all pods now have nginx\n    nginx_count=$(kubectl get pods -l tier=frontend -o jsonpath='{.items[*].spec.containers[0].image}' | grep -o nginx | wc -l)\n    if [ \"$nginx_count\" -eq \"3\" ]; then\n      echo \"✓ After deletion, all 3 pods now run nginx (healed)\"\n      exit 0\n    fi\n  fi\nfi\n\necho \"✗ Adoption experiment failed\"\nkubectl get pods -l tier=frontend -o wide\nexit 1\n"
+  }
+}

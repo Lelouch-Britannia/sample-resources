@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-pod-basic-nginx",
+  "title": "Create Your First Nginx Pod",
+  "order_index": 4,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Create a simple single-container Pod running Nginx web server.\n\n**Focus**: Understanding basic Pod manifest structure and the typical Pod creation workflow.\n\nThis exercise introduces the fundamental YAML structure for creating Pods. A Pod manifest consists of four key sections:\n- **apiVersion**: The API version used by the cluster (v1 for Pods)\n- **kind**: The type of Kubernetes object (Pod)\n- **metadata**: Data about the object, including its name and optional namespace\n- **spec**: The desired characteristics of the Pod, including containers\n\n## Pod Creation Workflow\n\n1. **Create a Pod Manifest**: Define the Pod using a YAML file\n2. **Apply the Manifest**: Use `kubectl apply -f pod.yaml`\n3. **API Server Validation**: The API server validates syntax and checks for conflicts\n4. **Scheduling**: Kubernetes scheduler assigns the Pod to a node\n5. **Container Runtime**: The node's container runtime (Docker, containerd) pulls the image and starts containers\n\nKubernetes will automatically restart the Pod if it fails, making Pods self-healing by default.",
+  "steps": [
+    "Set apiVersion to v1 for Pod objects",
+    "Set kind to Pod",
+    "Define metadata with name 'webserver'",
+    "Add container named 'webserver' in spec",
+    "Use image nginx:latest",
+    "Expose containerPort 80"
+  ],
+  "hints": [
+    "The spec.containers field is an array, even for a single container",
+    "containerPort defines which port the container listens on",
+    "metadata.name must be unique within the namespace",
+    "Use 'kubectl get pods' to verify the pod is running"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: # TODO: Which API version for Pod objects?\nkind: # TODO: What kind of object are we creating?\nmetadata:\n  name: # TODO: Give the pod a name\nspec:\n  containers:\n  - name: # TODO: Container name\n    image: # TODO: Which nginx image to use?\n    ports:\n    - containerPort: # TODO: What port does nginx use?\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1      # apiVersion: this is the version of the API used by the cluster. \n                    # With new versions of Kubernetes being released, new functionality is introduced and, hence, new API versions may be defined. \n                    # For the pod object, we use API version v1.\n\nkind: Pod           \n                    \nmetadata:           # Metadata: here we can define data about the object we are about to create.\n  name: webserver   # In this example, we only provide the name of the pod. But you can provide other details like the namespace.\nspec:               # The spec part defines the characteristics that a given Kubernetes object should have. \n                    # It is the cluster's responsibility to update the status of the object to always match the desired configuration. \n                    # In our example, the spec instructs that this object (the pod) should have one container with some attributes.\n  containers:\n  - name: webserver  # The name that this container will have.\n    image: nginx:latest # The image on which it is based.\n    ports:               # The port(s) that will be open.\n    - containerPort: 80\n",
+    "validation_script": "#!/bin/bash\n# Apply the manifest\nkubectl apply -f solution.yaml\n\n# Wait for pod to be ready\ntimeout=60\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  status=$(kubectl get pod webserver -o jsonpath='{.status.phase}' 2>/dev/null || echo \"NotFound\")\n  if [ \"$status\" = \"Running\" ]; then\n    echo \"✓ Pod is running\"\n    \n    # Verify container image\n    image=$(kubectl get pod webserver -o jsonpath='{.spec.containers[0].image}')\n    if echo \"$image\" | grep -q \"nginx\"; then\n      echo \"✓ Using nginx image\"\n      \n      # Verify port configuration\n      port=$(kubectl get pod webserver -o jsonpath='{.spec.containers[0].ports[0].containerPort}')\n      if [ \"$port\" = \"80\" ]; then\n        echo \"✓ Container port 80 correctly configured\"\n        \n        # Test nginx is responding\n        kubectl exec webserver -- curl -s localhost:80 > /dev/null 2>&1\n        if [ $? -eq 0 ]; then\n          echo \"✓ Nginx is responding to requests\"\n          exit 0\n        fi\n      fi\n    fi\n  fi\n  sleep 3\n  ((elapsed+=3))\ndone\n\necho \"✗ Pod validation failed\"\nkubectl describe pod webserver | tail -20\nexit 1\n"
+  }
+}

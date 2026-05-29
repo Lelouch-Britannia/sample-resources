@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-pod-shared-volume-logging",
+  "title": "Shared Volume: Log Shipper Sidecar",
+  "order_index": 8,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Create a Pod named \"logger-pod\" where one container generates logs and a sidecar container reads them in real-time.\n\n**Focus**: Using `spec.volumes` (emptyDir) and `volumeMounts` with different mount paths in each container.\n\nThis exercise demonstrates the \"Log Shipper\" sidecar pattern - a common production pattern where a helper container processes, aggregates, or forwards logs from the main application. In real-world scenarios, the sidecar might be Fluentd or Logstash shipping logs to Elasticsearch.\n\n**The Exercise Setup**:\n- **App Container**: Writes \"Running...\" to `/var/log/app.log` every 5 seconds\n- **Sidecar Container**: Reads from `/logs/app.log` and streams to stdout using `tail -f`\n- **Shared Volume**: An `emptyDir` volume mounted at different paths in each container\n\n**Why Different Mount Paths?**\nThis demonstrates that the same volume can be accessed from different paths:\n- App writes to `/var/log/app.log`\n- Sidecar reads from `/logs/app.log`\n- Both paths point to the same file in the shared volume\n\n**Real-World Pattern**:\n```yaml\n# Production example with Fluentd sidecar\n- name: app\n  volumeMounts:\n  - name: logs\n    mountPath: /var/log\n- name: fluentd\n  image: fluent/fluentd:latest\n  volumeMounts:\n  - name: logs\n    mountPath: /var/log  # Reads from same location\n```",
+  "steps": [
+    "Define an emptyDir volume named 'log-storage'",
+    "Create app container that writes logs to /var/log/app.log",
+    "Mount log-storage volume to /var/log in app container",
+    "Create sidecar container that reads from /logs/app.log",
+    "Mount log-storage volume to /logs in sidecar container",
+    "Verify sidecar can read logs written by app container"
+  ],
+  "hints": [
+    "emptyDir creates a temporary directory shared between containers in the same Pod",
+    "Each container can mount the same volume to different paths",
+    "Use volumeMounts in each container to specify where the volume appears",
+    "The args field uses array syntax for shell commands"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: logger-pod\nspec:\n  volumes:\n  - name: log-storage\n    emptyDir: {}\n  containers:\n  - name: app\n    image: busybox:latest\n    volumeMounts:\n    - name: log-storage\n      mountPath: /var/log\n    command: ['/bin/sh', '-c', 'while true; do echo Running... >> /var/log/app.log; sleep 5; done']\n  # TODO: Add sidecar container that reads from the same volume\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: logger-pod\nspec:\n  volumes:\n  - name: log-storage\n    emptyDir: {}\n  containers:\n  - name: app\n    image: busybox\n    volumeMounts:\n    - name: log-storage\n      mountPath: /var/log\n    args:\n    - /bin/sh\n    - -c\n    - 'while true; do echo \"Running...\" >> /var/log/app.log; sleep 5; done'\n  - name: sidecar\n    image: busybox\n    volumeMounts:\n    - name: log-storage\n      mountPath: /logs\n    args:\n    - /bin/sh\n    - -c\n    - 'tail -f /logs/app.log'\n",
+    "validation_script": "#!/bin/bash\n# Apply the manifest\nkubectl apply -f solution.yaml\n\n# Wait for pod to be ready\nkubectl wait --for=condition=Ready pod/logger-pod --timeout=60s\n\n# Wait a few seconds for logs to be generated\nsleep 10\n\n# Check logs of the sidecar container\nlogs=$(kubectl logs logger-pod -c sidecar --tail=5)\n\nif echo \"$logs\" | grep -q \"Running...\"; then\n  echo \"✓ Sidecar successfully reading logs from shared volume\"\n  exit 0\nelse\n  echo \"✗ Sidecar not reading logs. Output: $logs\"\n  exit 1\nfi\n"
+  }
+}

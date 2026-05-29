@@ -1,0 +1,27 @@
+{
+  "slug": "kubernetes-kubetail-multi-pod-logs",
+  "title": "Kubetail: Aggregate Logs from Multiple Pods",
+  "order_index": 11,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Learn to use Kubetail to aggregate and follow logs from multiple Pods simultaneously.\n\n**Focus**: Installing and using the kubetail tool to tail logs from multiple Pods in one stream.\n\nKubetail is a bash script that enables you to aggregate (tail/follow) logs from multiple Pods into one stream. This is the same as running `kubectl logs -f` but for multiple Pods at once, which is incredibly useful when you have replicated Pods and want to see all their logs together.\n\n**Why Kubetail?**\n- View logs from multiple Pods in a single stream\n- Color-coded output to distinguish between different Pods\n- Support for multiple containers within Pods\n- Regex pattern matching for Pod names\n- Namespace filtering\n\n**Use Cases**:\n- Monitoring replicated applications (3 nginx Pods, etc.)\n- Debugging distributed systems\n- Following logs across microservices\n- Observing rolling updates in real-time",
+  "steps": [
+    "Install kubetail on your system (MacOS via brew or Linux via git clone)",
+    "Get list of Pods using kubectl get pods",
+    "Use kubetail with Pod name prefix to tail multiple Pods",
+    "Try tailing specific containers with -c flag",
+    "Use regex patterns for advanced Pod matching",
+    "Filter logs by namespace using -n flag"
+  ],
+  "hints": [
+    "On MacOS: brew tap johanhaleby/kubetail && brew install kubetail",
+    "On Linux: Clone the repo and add to your shell plugins",
+    "Kubetail matches Pod names by prefix, so 'kubetail app' matches all Pods starting with 'app'",
+    "Use --regex flag for advanced pattern matching",
+    "Combine -c flags to tail multiple specific containers"
+  ],
+  "editor_config": {
+    "language": "bash",
+    "initial_code": "#!/bin/bash\n\n# ========================================\n# KUBETAIL INSTALLATION AND USAGE GUIDE\n# ========================================\n\n# INSTALLATION\n# ============\n\n# MacOS Installation\nbrew tap johanhaleby/kubetail && brew install kubetail\n\n# Linux Installation\n# git clone https://github.com/johanhaleby/kubetail.git kubetail\n# Add to ~/.zshrc: plugins=( ... kubetail )\n# source ~/.zshrc\n\n# VERIFICATION\n# ============\n\n# Check kubetail is installed\nwhich kubetail\n\n# View help\nkubetail -h\n\n# BASIC USAGE EXAMPLES\n# ====================\n\n# 1. Get list of Pods\nkubectl get pods\n\n# 2. Tail logs from Pods with prefix \"app2\"\nkubetail app2\n\n# 3. Tail specific container\nkubetail app2 -c container1\n\n# 4. Tail multiple containers\nkubetail app2 -c container1 -c container2\n\n# 5. Tail multiple applications\nkubetail app1,app2\n\n# 6. Use regex for pattern matching\nkubetail \"^app1|.*my-demo.*\" --regex\n\n# 7. Tail within specific namespace\nkubetail app2 -n production\n\n# KUBECTL ALTERNATIVE\n# ===================\n\n# Using kubectl with label selectors\nkubectl logs --selector=app=my-app\nkubectl logs --selector=app=my-app,environment=production\n\n# Follow logs with kubectl (single Pod)\nkubectl logs -f pod-name\n\n# Follow logs for specific container\nkubectl logs -f pod-name -c container-name\n\n# REAL-WORLD SCENARIOS\n# ====================\n\n# Scenario 1: Monitor all nginx replicas\nkubetail nginx\n\n# Scenario 2: Debug sidecar logs across all app Pods\nkubetail myapp -c log-shipper\n\n# Scenario 3: Monitor staging environment\nkubetail myapp -n staging\n\n# Scenario 4: Follow logs matching multiple patterns\nkubetail \"frontend|backend\" --regex\n\n# Scenario 5: Production monitoring with multiple containers\nkubetail myapp -c app -c sidecar -n production\n"
+  }
+}

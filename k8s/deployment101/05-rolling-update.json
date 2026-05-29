@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-deployment-rolling-update",
+  "title": "Rolling Update Strategy Configuration",
+  "order_index": 5,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Configure a deployment with custom rolling update parameters to ensure zero-downtime updates while controlling resource usage and availability guarantees.\n\n**Focus**: Understanding and configuring `maxSurge` and `maxUnavailable` for controlled rolling deployments with predictable behavior.\n\nThis exercise teaches the mathematics of availability during updates. With 4 replicas, `maxUnavailable: 2` ensures at least 2 pods are always running (4 desired - 2 max unavailable = 2 minimum), while `maxSurge: 1` limits resource usage by creating only 1 extra pod during the rollout (4 desired + 1 max surge = 5 maximum). These parameters directly control the trade-off between update speed (higher surge = faster) and resource consumption. In production, you'd set maxUnavailable based on minimum capacity needed to serve traffic, and maxSurge based on available cluster resources.",
+  "steps": [
+    "Create Deployment 'api-service' with 4 replicas",
+    "Configure rolling update strategy with maxSurge: 1",
+    "Set maxUnavailable: 2 to allow 2 pods down during update",
+    "Use nginx:1.26-alpine as initial image",
+    "Add labels app: api-service and version: v1",
+    "Test by updating to nginx:1.27-alpine and observe rollout"
+  ],
+  "hints": [
+    "Add strategy.type: RollingUpdate in the spec",
+    "Configure strategy.rollingUpdate.maxSurge and maxUnavailable",
+    "maxUnavailable: 2 means minimum 2 pods available (4 - 2 = 2)",
+    "maxSurge: 1 means maximum 5 pods during update (4 + 1 = 5)"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# Exercise 2: Configure this deployment with proper rolling update strategy\n# Requirements:\n# - 4 replicas\n# - Rolling update with maxSurge=1, maxUnavailable=2\n# - Ensure minimum 2 pods always available during updates\n\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: api-service\n  labels:\n    app: api-service  # Label on Deployment itself for filtering\nspec:\n  replicas: 4\n  selector:\n    matchLabels:\n      app: api-service\n      version: v1\n  # TODO: Add strategy configuration here\n  # Hint: strategy.type, strategy.rollingUpdate.maxSurge, strategy.rollingUpdate.maxUnavailable\n  template:\n    metadata:\n      labels:\n        app: api-service\n        version: v1\n    spec:\n      containers:\n      - name: api\n        image: nginx:1.26-alpine  # You'll update this to 1.27-alpine to test rolling update\n        ports:\n        - containerPort: 8080\n          name: http\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: api-service\nspec:\n  replicas: 4\n  selector:\n    matchLabels:\n      app: api-service\n      version: v1\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 1        # Create max 1 extra pod during update (4 + 1 = 5 total)\n      maxUnavailable: 2  # Max 2 pods can be down (4 - 2 = 2 minimum available)\n  template:\n    metadata:\n      labels:\n        app: api-service\n        version: v1\n    spec:\n      containers:\n      - name: api\n        image: nginx:1.26-alpine\n        ports:\n        - containerPort: 8080\n          name: http\n",
+    "validation_script": "#!/bin/bash\n# Apply the deployment\nkubectl apply -f solution.yaml\n\n# Wait for initial deployment to be ready\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get deployment api-service -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo \"0\")\n  if [ \"$ready\" = \"4\" ]; then\n    echo \"✓ Initial deployment has 4 ready replicas\"\n    break\n  fi\n  sleep 3\n  ((elapsed+=3))\ndone\n\n# Verify strategy configuration\nmax_surge=$(kubectl get deployment api-service -o jsonpath='{.spec.strategy.rollingUpdate.maxSurge}')\nmax_unavailable=$(kubectl get deployment api-service -o jsonpath='{.spec.strategy.rollingUpdate.maxUnavailable}')\n\nif [ \"$max_surge\" = \"1\" ] && [ \"$max_unavailable\" = \"2\" ]; then\n  echo \"✓ Rolling update strategy correctly configured (maxSurge=1, maxUnavailable=2)\"\n  \n  # Trigger rolling update\n  kubectl set image deployment/api-service api=nginx:1.27-alpine\n  \n  # Monitor the rollout\n  kubectl rollout status deployment/api-service --timeout=90s\n  \n  if [ $? -eq 0 ]; then\n    echo \"✓ Rolling update completed successfully\"\n    \n    # Verify revision history\n    revisions=$(kubectl rollout history deployment/api-service --revision=0 | grep -c \"REVISION\")\n    if [ \"$revisions\" -ge \"2\" ]; then\n      echo \"✓ Rollout history shows multiple revisions\"\n      exit 0\n    fi\n  fi\nfi\n\necho \"✗ Rolling update strategy validation failed\"\nkubectl get deployment api-service -o yaml | grep -A 5 \"strategy:\"\nexit 1\n"
+  }
+}

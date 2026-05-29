@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-pod-configmap-volume",
+  "title": "ConfigMap Volume: Nginx + Prometheus",
+  "order_index": 10,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Create a Pod running Nginx web server and Prometheus monitoring with configuration injected via ConfigMap.\n\n**Focus**: Using ConfigMap volumes to inject complex configuration files (YAML) into containers without rebuilding images.\n\nThis exercise demonstrates a realistic production pattern where monitoring tools (Prometheus) run alongside applications as sidecars. The Prometheus configuration is stored in a ConfigMap and mounted as a volume, allowing you to update monitoring configuration without changing container images.\n\n**The Architecture**:\n- **Nginx container**: Serves web traffic on port 80\n- **Prometheus container**: Monitors services and exports metrics on port 9090\n- **ConfigMap**: Contains `prometheus.yml` configuration file\n- **Volume mount**: ConfigMap mounted to `/etc/prometheus` in Prometheus container\n\n**Why This Pattern?**\n- Prometheus reads its config from `/etc/prometheus/prometheus.yml`\n- Storing config in ConfigMap allows updates without rebuilding images\n- Same Prometheus image can monitor different targets by changing ConfigMap\n- Both containers run in the same Pod for efficient monitoring\n\n**Configuration Structure**:\n```yaml\ndata:\n  prometheus.yml: |\n    scrape_configs:\n    - job_name: 'my-service'\n      static_configs:\n      - targets: ['localhost:8080']\n```\n\nWhen mounted, `prometheus.yml` becomes a file that Prometheus reads.\n\n**Real-World Use**: This pattern is used in service meshes, observability platforms, and microservices where monitoring sidecars need custom configuration.",
+  "steps": [
+    "Create ConfigMap named 'prometheus-configmap' with prometheus.yml data",
+    "Define scrape configuration for monitoring localhost:8080",
+    "Create Pod named 'webserver-prometheus' with two containers",
+    "Add nginx container exposing port 80",
+    "Add prometheus container exposing port 9090",
+    "Mount ConfigMap as volume to /etc/prometheus in prometheus container"
+  ],
+  "hints": [
+    "ConfigMap can be created in the same YAML file using '---' separator",
+    "Use configMap volume type to reference the ConfigMap",
+    "The prometheus container needs args to specify the config file location",
+    "ConfigMap data keys become filenames when mounted as volumes"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: webserver-prometheus\nspec:\n  containers:\n  - name: webserver\n    image: nginx:latest\n    ports:\n    - containerPort: 80\n  # TODO: Add prometheus container\n  # - name: prometheus\n  #   image: prom/prometheus:v2.30.3\n  #   ports:\n  #   - containerPort: 9090\n  #   args:\n  #   - --config.file=/etc/prometheus/prometheus.yml\n  #   volumeMounts:\n  #   - name: prometheus-config\n  #     mountPath: /etc/prometheus\n  \n  # TODO: Add volumes section\n  # volumes:\n  # - name: prometheus-config\n  #   configMap:\n  #     name: prometheus-configmap\n\n---\n# TODO: Create ConfigMap with Prometheus configuration\n# apiVersion: v1\n# kind: ConfigMap\n# metadata:\n#   name: prometheus-configmap\n# data:\n#   prometheus.yml: |\n#     scrape_configs:\n#     - job_name: 'my-service'\n#       static_configs:\n#       - targets: ['localhost:8080']\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: webserver-prometheus\nspec:\n  containers:\n  - name: webserver\n    image: nginx:latest\n    ports:\n    - containerPort: 80\n  - name: prometheus\n    image: prom/prometheus:v2.30.3\n    ports:\n    - containerPort: 9090\n    args:\n    - --config.file=/etc/prometheus/prometheus.yml\n    volumeMounts:\n    - name: prometheus-config\n      mountPath: /etc/prometheus\n  volumes:\n  - name: prometheus-config\n    configMap:\n      name: prometheus-configmap\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: prometheus-configmap\ndata:\n  prometheus.yml: |\n    # Place your Prometheus configuration here\n    # Example:\n    scrape_configs:\n    - job_name: 'my-service'\n      static_configs:\n      - targets: ['localhost:8080']\n",
+    "validation_script": "#!/bin/bash\n# Apply the manifest (includes ConfigMap and Pod)\nkubectl apply -f solution.yaml\n\n# Verify ConfigMap was created\nkubectl get configmap prometheus-configmap > /dev/null 2>&1\nif [ $? -eq 0 ]; then\n  echo \"✓ ConfigMap created successfully\"\n  \n  # Wait for pod to be ready\n  timeout=90\n  elapsed=0\n  while [ $elapsed -lt $timeout ]; do\n    ready=$(kubectl get pod webserver-prometheus -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}' 2>/dev/null || echo \"False\")\n    if [ \"$ready\" = \"True\" ]; then\n      echo \"✓ Pod is running with both containers\"\n      \n      # Verify prometheus container has the config file\n      config_exists=$(kubectl exec webserver-prometheus -c prometheus -- ls /etc/prometheus/prometheus.yml 2>/dev/null)\n      if [ -n \"$config_exists\" ]; then\n        echo \"✓ ConfigMap mounted to prometheus container\"\n        \n        # Verify config content\n        config_content=$(kubectl exec webserver-prometheus -c prometheus -- cat /etc/prometheus/prometheus.yml)\n        if echo \"$config_content\" | grep -q \"scrape_configs\"; then\n          echo \"✓ Prometheus configuration is correct\"\n          \n          # Verify prometheus is running\n          sleep 10\n          kubectl exec webserver-prometheus -c prometheus -- wget -q -O- localhost:9090/-/healthy > /dev/null 2>&1\n          if [ $? -eq 0 ]; then\n            echo \"✓ Prometheus is healthy and running\"\n            exit 0\n          fi\n        fi\n      fi\n    fi\n    sleep 3\n    ((elapsed+=3))\n  done\nfi\n\necho \"✗ ConfigMap volume validation failed\"\nkubectl describe pod webserver-prometheus | tail -20\nexit 1\n"
+  }
+}

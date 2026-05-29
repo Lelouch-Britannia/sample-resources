@@ -1,0 +1,32 @@
+{
+  "slug": "kubernetes-deployment-rolling-update-practice",
+  "title": "Practice: Rolling Update Strategy",
+  "order_index": 6,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Implement a complete rolling update deployment lifecycle including creation, scaling, updating, and rollback verification.\n\n**Focus**: Configuring RollingUpdate strategy with maxSurge and maxUnavailable to ensure zero-downtime updates while practicing the full deployment workflow.\n\nThis exercise teaches the complete deployment lifecycle. You'll configure rolling update parameters, observe how Kubernetes orchestrates the gradual pod replacement during image updates, and verify that the revision history is maintained for rollback capabilities. The \"Pass the Baton\" pattern you'll observe - where the old ReplicaSet scales down (3→2→1→0) while the new ReplicaSet scales up (0→1→2→3) - ensures continuous availability. Understanding this behavior is essential for debugging stuck rollouts and configuring appropriate update parameters.",
+  "steps": [
+    "Create Deployment 'nginx-rolling' with 3 replicas of nginx:1.26",
+    "Configure RollingUpdate strategy with maxSurge: 1 and maxUnavailable: 1",
+    "Apply the deployment and verify 3 pods are running",
+    "Scale deployment to 5 replicas and observe",
+    "Scale back to 3 replicas",
+    "Update image to nginx:1.27 and watch the rolling update",
+    "Verify rollout history shows 2 revisions"
+  ],
+  "hints": [
+    "Use strategy.type: RollingUpdate and strategy.rollingUpdate for configuration",
+    "maxSurge: 1 means max 4 pods during update (3 + 1)",
+    "maxUnavailable: 1 means min 2 pods available (3 - 1)",
+    "Use 'kubectl set image' to trigger an update",
+    "Watch the update with 'kubectl get rs -w' in another terminal"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx-rolling\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: nginx-lab\n  # TODO: Add strategy configuration\n  # strategy:\n  #   type: RollingUpdate\n  #   rollingUpdate:\n  #     maxSurge: 1\n  #     maxUnavailable: 1\n  template:\n    metadata:\n      labels:\n        app: nginx-lab\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.26  # TODO: You'll update this to 1.27 later\n        ports:\n        - containerPort: 80\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx-rolling\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: nginx-lab\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 1        # Can create 1 extra pod above desired count (3 + 1 = 4 total during update)\n      maxUnavailable: 1  # Can accept 1 pod being down (3 - 1 = 2 min available)\n  template:\n    metadata:\n      labels:\n        app: nginx-lab\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.26  # <--- OLD VERSION\n        ports:\n        - containerPort: 80\n",
+    "validation_script": "#!/bin/bash\n# Apply the deployment\nkubectl apply -f solution.yaml\n\n# Wait for initial deployment\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get deployment nginx-rolling -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo \"0\")\n  if [ \"$ready\" = \"3\" ]; then\n    echo \"✓ Initial deployment has 3 ready replicas\"\n    break\n  fi\n  sleep 3\n  ((elapsed+=3))\ndone\n\n# Verify strategy configuration\nstrategy_type=$(kubectl get deployment nginx-rolling -o jsonpath='{.spec.strategy.type}')\nmax_surge=$(kubectl get deployment nginx-rolling -o jsonpath='{.spec.strategy.rollingUpdate.maxSurge}')\nmax_unavailable=$(kubectl get deployment nginx-rolling -o jsonpath='{.spec.strategy.rollingUpdate.maxUnavailable}')\n\nif [ \"$strategy_type\" = \"RollingUpdate\" ] && [ \"$max_surge\" = \"1\" ] && [ \"$max_unavailable\" = \"1\" ]; then\n  echo \"✓ RollingUpdate strategy correctly configured\"\n  \n  # Test scaling\n  kubectl scale deployment nginx-rolling --replicas=5\n  sleep 10\n  scaled=$(kubectl get deployment nginx-rolling -o jsonpath='{.status.readyReplicas}')\n  \n  if [ \"$scaled\" = \"5\" ]; then\n    echo \"✓ Deployment scaled to 5 replicas\"\n    \n    # Scale back\n    kubectl scale deployment nginx-rolling --replicas=3\n    sleep 10\n    \n    # Trigger rolling update\n    kubectl set image deployment/nginx-rolling nginx=nginx:1.27\n    \n    # Wait for rollout to complete\n    kubectl rollout status deployment/nginx-rolling --timeout=90s\n    \n    if [ $? -eq 0 ]; then\n      echo \"✓ Rolling update completed successfully\"\n      \n      # Verify revision history\n      revisions=$(kubectl rollout history deployment/nginx-rolling | grep -c \"REVISION\")\n      if [ \"$revisions\" -ge \"2\" ]; then\n        echo \"✓ Rollout history shows multiple revisions\"\n        \n        # Verify updated image\n        current_image=$(kubectl get deployment nginx-rolling -o jsonpath='{.spec.template.spec.containers[0].image}')\n        if echo \"$current_image\" | grep -q \"1.27\"; then\n          echo \"✓ Image updated to nginx:1.27\"\n          exit 0\n        fi\n      fi\n    fi\n  fi\nfi\n\necho \"✗ Rolling update validation failed\"\nkubectl get deployment nginx-rolling\nkubectl get rs -l app=nginx-lab\nexit 1\n"
+  }
+}

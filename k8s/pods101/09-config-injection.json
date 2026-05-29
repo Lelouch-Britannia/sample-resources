@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-pod-configmap-injection",
+  "title": "ConfigMap Volume: Configuration Injection",
+  "order_index": 9,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Inject a configuration file into two different containers within the same Pod using a ConfigMap.\n\n**Focus**: Creating ConfigMaps and mounting them as read-only volumes to provide configuration files to containers.\n\nThis exercise demonstrates the \"Configuration Injection\" pattern - a fundamental Kubernetes practice for separating configuration from application code. Instead of baking configuration into container images, you store it in ConfigMaps and mount it at runtime.\n\n**The Pattern**:\n1. Create a ConfigMap containing configuration data\n2. Define a configMap volume in the Pod spec\n3. Mount that volume into one or more containers\n4. Applications read configuration from the mounted path\n\n**Why ConfigMaps?**\n- **Decoupling**: Configuration is separate from container images\n- **Reusability**: Same image can be used with different configs\n- **Updates**: Change config without rebuilding images\n- **Sharing**: Multiple containers can access the same configuration\n\n**In this exercise**:\n- ConfigMap stores game settings (`difficulty=hard`)\n- Server container accesses config at `/etc/game/config/game.properties`\n- Admin container accesses the same config at `/config/game.properties`\n- Both read the same data through different mount paths\n\n**Note**: ConfigMap volumes are read-only by default, preventing containers from accidentally modifying shared configuration.",
+  "steps": [
+    "Create ConfigMap named 'global-config' with game.properties file",
+    "Add configuration data: difficulty=hard",
+    "Define Pod named 'game-server' with configMap volume",
+    "Mount config-vol to /etc/game/config in server container",
+    "Mount config-vol to /config in admin container",
+    "Verify configuration file is accessible in both containers"
+  ],
+  "hints": [
+    "ConfigMaps store configuration data as key-value pairs",
+    "Use the configMap volume type to mount ConfigMap data as files",
+    "The same volume can be mounted to different paths in different containers",
+    "ConfigMap data keys become filenames when mounted as volumes"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: global-config\ndata:\n  game.properties: |\n    maxPlayers=100\n    mapSize=large\n    difficulty=hard\n\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: game-server\nspec:\n  volumes:\n  - name: config-vol\n    configMap:\n      name: global-config\n  containers:\n  - name: server\n    image: nginx:latest\n    volumeMounts:\n    - name: config-vol\n      mountPath: /etc/game/config\n  # TODO: Add admin container that mounts the same config volume to /config\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: global-config\ndata:\n  game.properties: |\n    difficulty=hard\n    lives=3\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: game-server\nspec:\n  volumes:\n  - name: config-vol\n    configMap:\n      name: global-config\n  containers:\n  - name: server\n    image: nginx\n    volumeMounts:\n    - name: config-vol\n      mountPath: /etc/game/config\n  - name: admin\n    image: busybox\n    command: [\"sleep\", \"3600\"]\n    volumeMounts:\n    - name: config-vol\n      mountPath: /config\n",
+    "validation_script": "#!/bin/bash\n# Apply the manifest\nkubectl apply -f solution.yaml\n\n# Wait for pod to be ready\nkubectl wait --for=condition=Ready pod/game-server --timeout=60s\n\n# Verify the config file exists in the admin container\nconfig_content=$(kubectl exec game-server -c admin -- cat /config/game.properties)\n\nif echo \"$config_content\" | grep -q \"difficulty=hard\"; then\n  echo \"✓ ConfigMap successfully mounted and accessible\"\n  exit 0\nelse\n  echo \"✗ ConfigMap not properly mounted. Content: $config_content\"\n  exit 1\nfi\n"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "slug": "kubernetes-deployment-bluegreen-practice",
+  "title": "Practice: Blue/Green Deployment",
+  "order_index": 7,
+  "type": "coding",
+  "difficulty": "advanced",
+  "description": "Implement a Blue/Green deployment strategy with instant cutover capability for zero-downtime releases with immediate rollback safety.\n\n**Focus**: Running two complete production environments side-by-side and switching traffic instantly via Service selector updates.\n\nThis exercise demonstrates the Blue/Green pattern where Blue (nginx:1.26) is the current production version and Green (nginx:1.27) is the new version. Both environments run simultaneously (6 total pods), but only one receives traffic based on the Service selector. The critical insight is that traffic switches instantly by updating the Service selector from `version: \"1.26\"` to `version: \"1.27\"` - no pod restarts required. This enables immediate rollback by simply reverting the selector. The pattern is ideal for high-stakes releases where instant rollback is more important than resource efficiency.",
+  "steps": [
+    "Deploy Blue environment (nginx-1.26) with 3 replicas",
+    "Add labels: name=nginx, version=1.26",
+    "Create Service that routes to Blue (selector: version=1.26)",
+    "Deploy Green environment (nginx-1.27) with 3 replicas",
+    "Add labels: name=nginx, version=1.27",
+    "Verify both Blue and Green deployments coexist (6 total pods)",
+    "Switch Service to Green by updating selector to version=1.27",
+    "Practice rollback by switching Service back to Blue"
+  ],
+  "hints": [
+    "Both deployments must have a common label (name: nginx)",
+    "Version-specific label (version: 1.26 or 1.27) enables switching",
+    "Service selector controls which deployment receives traffic",
+    "Use 'kubectl patch svc' to update the Service selector",
+    "Both environments remain running - only traffic routing changes"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# Blue Deployment (Current Production - nginx 1.26)\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx-1.26\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      name: nginx\n      version: \"1.26\"\n  template:\n    metadata:\n      labels:\n        name: nginx\n        version: \"1.26\"\n    spec:\n      containers: \n        - name: nginx\n          image: nginx:1.26-alpine\n          ports:\n            - name: http\n              containerPort: 80\n\n---\n# Service (Initially routes to Blue)\napiVersion: v1\nkind: Service\nmetadata: \n  name: nginx\n  labels: \n    name: nginx\nspec:\n  ports:\n    - name: http\n      port: 80\n      targetPort: 80\n  selector: \n    name: nginx\n    version: \"1.26\"  # TODO: Switch to \"1.27\" to route to Green\n  type: NodePort\n\n---\n# Green Deployment (New Version - nginx 1.27)\n# TODO: Create this deployment with version: \"1.27\" labels\n"
+  },
+  "_solution": {
+    "code_solution": "# Blue Deployment (Current Production - nginx 1.26)\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx-1.26\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      name: nginx\n      version: \"1.26\"\n  template:\n    metadata:\n      labels:\n        name: nginx\n        version: \"1.26\"\n    spec:\n      containers: \n        - name: nginx\n          image: nginx:1.26-alpine\n          ports:\n            - name: http\n              containerPort: 80\n\n---\n# Service (Initially routes to Blue)\napiVersion: v1\nkind: Service\nmetadata: \n  name: nginx\n  labels: \n    name: nginx\nspec:\n  ports:\n    - name: http\n      port: 80\n      targetPort: 80\n  selector: \n    name: nginx\n    version: \"1.26\"  # Will be updated to switch between blue/green\n  type: NodePort\n\n---\n# Green Deployment (New Version - nginx 1.27)\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx-1.27\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      name: nginx\n      version: \"1.27\"\n  template:\n    metadata:\n      labels:\n        name: nginx\n        version: \"1.27\"\n    spec:\n      containers: \n        - name: nginx\n          image: nginx:1.27-alpine\n          ports:\n            - name: http\n              containerPort: 80\n",
+    "validation_script": "#!/bin/bash\n# Apply all manifests\nkubectl apply -f solution.yaml\n\n# Wait for both deployments\ntimeout=120\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  blue_ready=$(kubectl get deployment nginx-1.26 -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo \"0\")\n  green_ready=$(kubectl get deployment nginx-1.27 -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo \"0\")\n  \n  if [ \"$blue_ready\" = \"3\" ] && [ \"$green_ready\" = \"3\" ]; then\n    echo \"✓ Both Blue and Green deployments ready (3 replicas each)\"\n    break\n  fi\n  sleep 3\n  ((elapsed+=3))\ndone\n\n# Verify total pod count\ntotal_pods=$(kubectl get pods -l name=nginx --no-headers | wc -l)\nif [ \"$total_pods\" -eq \"6\" ]; then\n  echo \"✓ Total of 6 pods running (3 Blue + 3 Green)\"\n  \n  # Verify Service initially points to Blue\n  svc_version=$(kubectl get svc nginx -o jsonpath='{.spec.selector.version}')\n  if [ \"$svc_version\" = \"1.26\" ]; then\n    echo \"✓ Service initially routes to Blue (version 1.26)\"\n    \n    # Switch to Green\n    kubectl patch svc nginx -p '{\"spec\":{\"selector\":{\"version\":\"1.27\"}}}'\n    sleep 5\n    \n    # Verify switch to Green\n    svc_version=$(kubectl get svc nginx -o jsonpath='{.spec.selector.version}')\n    if [ \"$svc_version\" = \"1.27\" ]; then\n      echo \"✓ Service switched to Green (version 1.27)\"\n      \n      # Verify endpoints changed\n      endpoint_count=$(kubectl get endpoints nginx -o jsonpath='{.subsets[*].addresses[*].ip}' | wc -w)\n      if [ \"$endpoint_count\" -eq \"3\" ]; then\n        echo \"✓ Service has 3 endpoints (Green pods)\"\n        \n        # Test rollback\n        kubectl patch svc nginx -p '{\"spec\":{\"selector\":{\"version\":\"1.26\"}}}'\n        sleep 3\n        \n        svc_version=$(kubectl get svc nginx -o jsonpath='{.spec.selector.version}')\n        if [ \"$svc_version\" = \"1.26\" ]; then\n          echo \"✓ Rollback successful (back to Blue)\"\n          exit 0\n        fi\n      fi\n    fi\n  fi\nfi\n\necho \"✗ Blue/Green deployment validation failed\"\nkubectl get deployments -l name=nginx\nkubectl get svc nginx -o yaml | grep -A 5 \"selector:\"\nexit 1\n"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-pod-two-containers",
+  "title": "Multi-Container Pod: Nginx + Web Watcher",
+  "order_index": 6,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Create a Pod with two containers: an Nginx web server and a Python-based web watcher that analyzes the nginx response via localhost communication.\n\n**Focus**: Adding multiple containers to a single Pod and understanding container communication via localhost.\n\nThis exercise demonstrates the sidecar pattern where a helper container (web watcher) monitors the main application container (nginx). The web watcher makes HTTP requests to nginx on `127.0.0.1` and analyzes the response, showcasing how containers in the same Pod can communicate through the loopback interface without network latency.\n\n**The Web Watcher Application**:\nThe watcher container runs a Python script that continuously fetches the nginx homepage via localhost and counts occurrences of the letter 'n':\n\n```python\nimport requests\nimport time\nr = requests.get(\"http://127.0.0.1\").text\nwhile True:\n    num = r.count(\"n\")\n    print(\"There are \" + str(num) + \" occurrences of 'n'\")\n```\n\n**Why This Works**:\n- Both containers share the same network namespace\n- They communicate via `127.0.0.1` (localhost)\n- No service or network configuration needed\n- Zero network latency for inter-container communication",
+  "steps": [
+    "Create Pod named 'webserver' with apiVersion v1",
+    "Add first container 'webserver' using nginx:latest",
+    "Expose container port 80 for nginx",
+    "Add second container 'webwatcher' using afakharany/watcher:latest",
+    "Verify both containers are running in the pod",
+    "Check webwatcher logs to see analysis output"
+  ],
+  "hints": [
+    "Both containers go in the same spec.containers array",
+    "Each container needs a unique name within the Pod",
+    "No ports needed for webwatcher since it only makes outbound requests",
+    "Use 'kubectl logs webserver -c webwatcher' to view watcher output"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: webserver\nspec:\n  containers:\n  - name: webserver\n    image: nginx:latest\n    ports:\n    - containerPort: 80\n  # TODO: Add the webwatcher container\n  # - name: webwatcher\n  #   image: afakharany/watcher:latest\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: webserver\nspec:\n  containers:\n  - name: webserver\n    image: nginx:latest\n    ports:\n    - containerPort: 80\n  - name: webwatcher\n    image: afakharany/watcher:latest\n",
+    "validation_script": "#!/bin/bash\n# Apply the manifest\nkubectl apply -f solution.yaml\n\n# Wait for pod to be ready\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get pod webserver -o jsonpath='{.status.containerStatuses[?(@.name==\"webwatcher\")].ready}' 2>/dev/null || echo \"false\")\n  if [ \"$ready\" = \"true\" ]; then\n    echo \"✓ Both containers are running\"\n    \n    # Verify container count\n    container_count=$(kubectl get pod webserver -o jsonpath='{.spec.containers[*].name}' | wc -w)\n    if [ \"$container_count\" -eq \"2\" ]; then\n      echo \"✓ Pod has 2 containers\"\n      \n      # Check webwatcher logs for expected output\n      sleep 5\n      logs=$(kubectl logs webserver -c webwatcher --tail=3 2>/dev/null)\n      \n      if echo \"$logs\" | grep -q \"occurrences\"; then\n        echo \"✓ Webwatcher is analyzing nginx responses\"\n        \n        # Verify containers can communicate via localhost\n        kubectl exec webserver -c webwatcher -- curl -s localhost:80 > /dev/null 2>&1\n        if [ $? -eq 0 ]; then\n          echo \"✓ Containers can communicate via localhost\"\n          exit 0\n        fi\n      fi\n    fi\n  fi\n  sleep 3\n  ((elapsed+=3))\ndone\n\necho \"✗ Multi-container pod validation failed\"\nkubectl describe pod webserver | tail -20\nexit 1\n"
+  }
+}

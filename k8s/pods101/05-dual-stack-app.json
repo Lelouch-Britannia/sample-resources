@@ -1,0 +1,29 @@
+{
+  "slug": "kubernetes-pod-dual-stack-app",
+  "title": "Multi-Container Pod: Dual-Stack App",
+  "order_index": 5,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Create a single Pod with two containers: a frontend web server and a Redis cache.\n\n**Focus**: Understanding `spec.containers` list syntax and exposing multiple ports.\n\nThis exercise simulates the \"Dual-Stack\" pattern where a web application runs alongside a local cache within the same Pod. Because containers share the same network namespace, nginx can connect to Redis via `localhost:6379` without any network latency.\n\n**Key Learning Points**:\n- The `spec.containers` field is an array, allowing multiple container definitions\n- Each container requires a unique name within the Pod\n- Use `containerPort` to declare which ports containers listen on\n- Both containers share the same IP address but can expose different ports",
+  "steps": [
+    "Create Pod named 'app-cache'",
+    "Add frontend container using nginx:alpine image",
+    "Expose container port 80 for frontend",
+    "Add cache container using redis:alpine image",
+    "Expose container port 6379 for Redis",
+    "Verify both ports are correctly configured"
+  ],
+  "hints": [
+    "The spec.containers field is an array - you can add multiple containers",
+    "Each container needs a unique name within the Pod",
+    "Use containerPort to expose ports, not hostPort"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: app-cache\nspec:\n  containers:\n  - name: frontend\n    image: nginx:latest  # TODO: Use nginx:alpine\n    ports:\n    - containerPort: 80\n  # TODO: Add cache container\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: app-cache\nspec:\n  containers:\n  - name: frontend\n    image: nginx:alpine\n    ports:\n    - containerPort: 80\n  - name: cache\n    image: redis:alpine\n    ports:\n    - containerPort: 6379\n",
+    "validation_script": "#!/bin/bash\n# Apply the manifest\nkubectl apply -f solution.yaml\n\n# Wait for pod to be ready\nkubectl wait --for=condition=Ready pod/app-cache --timeout=60s\n\n# Check if both ports are exposed\nports=$(kubectl get pod app-cache -o jsonpath='{.spec.containers[*].ports[*].containerPort}')\n\nif [[ \"$ports\" == *\"80\"* ]] && [[ \"$ports\" == *\"6379\"* ]]; then\n  echo \"✓ Both ports (80, 6379) correctly exposed\"\n  exit 0\nelse\n  echo \"✗ Expected ports: 80 6379, Got: $ports\"\n  exit 1\nfi\n"
+  }
+}
