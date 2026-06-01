@@ -1,0 +1,187 @@
+{
+  "_note": "Notion URLs include only pages with Status=Done. Subpages of a DB entry are listed under 'notion_subpages'.",
+  "topics": [
+    {
+      "topic": "k8s-architecture",
+      "label": "K8s Architecture & Control Plane",
+      "kubelabs": "references/Kubernetes_Architecture.md",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/overview/components/",
+        "https://kubernetes.io/docs/concepts/architecture/",
+        "https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/"
+      ],
+      "notion": [
+        "https://www.notion.so/34ebf897bed7810d8a78f6bcb0f03837"
+      ]
+    },
+    {
+      "topic": "pods",
+      "label": "Pods",
+      "kubelabs": "references/pods101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/workloads/pods/",
+        "https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/",
+        "https://kubernetes.io/docs/concepts/workloads/pods/init-containers/",
+        "https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/"
+      ],
+      "notion": [
+        "https://www.notion.so/34ebf897bed781a1bf8ce204b9bd9821"
+      ]
+    },
+    {
+      "topic": "replicaset",
+      "label": "ReplicaSet",
+      "kubelabs": "references/replicaset101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/"
+      ],
+      "notion": [
+        "https://www.notion.so/34ebf897bed78118a556cae5c6c7f2ed"
+      ]
+    },
+    {
+      "topic": "logging",
+      "label": "Logging (Basic)",
+      "kubelabs": "references/Logging101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/cluster-administration/logging/"
+      ],
+      "notion": [
+        "https://www.notion.so/34ebf897bed78141815ce47954ad63b2"
+      ]
+    },
+    {
+      "topic": "deployment-rolling-update",
+      "label": "Deployment — Rolling Update",
+      "kubelabs": "references/Deployment101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/",
+        "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#rolling-update-deployment",
+        "https://kubernetes.io/docs/tutorials/kubernetes-basics/update/update-intro/"
+      ],
+      "notion": [
+        "https://www.notion.so/34ebf897bed781138cfdfdd9e53e7266"
+      ],
+      "notion_subpages": [
+        "https://www.notion.so/2cebf897bed780f398fddf4d74a1db08"
+      ]
+    },
+    {
+      "topic": "deployment-blue-green",
+      "label": "Deployment — Blue-Green",
+      "kubelabs": "references/bluegreen/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy"
+      ],
+      "notion": [],
+      "notion_subpages": [
+        "https://www.notion.so/2cebf897bed780d4bb24d091883c2815"
+      ],
+      "notion_note": "Blue-Green content is in 'Deployment Types' subpage of 09-Deployment (Done)"
+    },
+    {
+      "topic": "deployment-canary",
+      "label": "Deployment — Canary",
+      "kubelabs": "references/Rollouts101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy"
+      ],
+      "notion": [],
+      "notion_subpages": [
+        "https://www.notion.so/2cebf897bed780d4bb24d091883c2815"
+      ],
+      "notion_note": "Canary content is in 'Deployment Types' subpage of 09-Deployment (Done)"
+    },
+    {
+      "topic": "services",
+      "label": "Services (ClusterIP, NodePort, LoadBalancer)",
+      "kubelabs": "references/Services101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/services-networking/service/",
+        "https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types",
+        "https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/"
+      ],
+      "notion": [],
+      "notion_note": "11-Service and 13-Service (Advanced) both Not started in Notion DB"
+    },
+    {
+      "topic": "statefulset",
+      "label": "StatefulSet",
+      "kubelabs": "references/StatefulSets101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/",
+        "https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/"
+      ],
+      "notion": [],
+      "notion_note": "15-StatefulSet is Not started in Notion DB"
+    },
+    {
+      "topic": "daemonset",
+      "label": "DaemonSet",
+      "kubelabs": "references/DaemonSet101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/"
+      ],
+      "notion": [],
+      "notion_note": "16-DaemonSet is Not started in Notion DB"
+    },
+    {
+      "topic": "configmaps",
+      "label": "ConfigMaps",
+      "kubelabs": "references/ConfigMaps101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/configuration/configmap/",
+        "https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/"
+      ],
+      "notion": [],
+      "notion_note": "10-ConfigMap & Secret is In progress in Notion DB — not yet Done"
+    },
+    {
+      "topic": "scheduler",
+      "label": "Scheduler",
+      "kubelabs": "references/Scheduler101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/",
+        "https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/",
+        "https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/"
+      ],
+      "notion": [
+        "https://www.notion.so/34ebf897bed7810d8a78f6bcb0f03837"
+      ],
+      "notion_note": "Scheduler covered within 01-Architecture page (Done). No standalone Scheduler page."
+    },
+    {
+      "topic": "ingress",
+      "label": "Ingress",
+      "kubelabs": "references/Ingress101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/services-networking/ingress/",
+        "https://kubernetes.io/docs/concepts/services-networking/ingress-controllers/"
+      ],
+      "notion": [],
+      "notion_note": "14-Ingress is Not started in Notion DB"
+    },
+    {
+      "topic": "gateway-api",
+      "label": "Gateway API",
+      "kubelabs": "references/Gateway101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/concepts/services-networking/gateway/",
+        "https://gateway-api.sigs.k8s.io/concepts/api-overview/"
+      ],
+      "notion": [],
+      "notion_note": "No Gateway API page in Notion DB"
+    },
+    {
+      "topic": "rbac",
+      "label": "RBAC",
+      "kubelabs": "references/RBAC101/",
+      "k8s_docs": [
+        "https://kubernetes.io/docs/reference/access-authn-authz/rbac/",
+        "https://kubernetes.io/docs/reference/access-authn-authz/authorization/"
+      ],
+      "notion": [],
+      "notion_note": "22-RBAC Basics, 26-RBAC (Prod), 42-Advanced RBAC all Not started in Notion DB"
+    }
+  ]
+}
