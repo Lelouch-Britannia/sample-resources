@@ -1,7 +1,7 @@
 {
   "slug": "kubernetes-deployment-rolling-update",
   "title": "Rolling Update Strategy Configuration",
-  "order_index": 5,
+  "order_index": 7,
   "type": "coding",
   "difficulty": "intermediate",
   "description": "Configure a deployment with custom rolling update parameters to ensure zero-downtime updates while controlling resource usage and availability guarantees.\n\n**Focus**: Understanding and configuring `maxSurge` and `maxUnavailable` for controlled rolling deployments with predictable behavior.\n\nThis exercise teaches the mathematics of availability during updates. With 4 replicas, `maxUnavailable: 2` ensures at least 2 pods are always running (4 desired - 2 max unavailable = 2 minimum), while `maxSurge: 1` limits resource usage by creating only 1 extra pod during the rollout (4 desired + 1 max surge = 5 maximum). These parameters directly control the trade-off between update speed (higher surge = faster) and resource consumption. In production, you'd set maxUnavailable based on minimum capacity needed to serve traffic, and maxSurge based on available cluster resources.",

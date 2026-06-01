@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-deployment-resource-limits",
+  "title": "Configure Resource Requests and Limits",
+  "order_index": 3,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Configure CPU and memory requests/limits on a Deployment — a mandatory production requirement that affects scheduling, QoS, and cluster stability.\n\n**Focus**: Understanding the difference between requests (scheduling guarantee) and limits (enforcement ceiling), and how they determine the pod's QoS class.\n\n## Requests vs Limits\n- **Requests**: What the scheduler reserves on a node. Pod is only placed on nodes with this capacity available.\n- **Limits**: Hard ceiling enforced by the kernel. CPU is throttled; memory over-limit causes OOMKill.\n\n## QoS Classes\n| Class | Condition | Eviction Priority |\n|---|---|---|\n| Guaranteed | requests == limits for all containers | Last evicted |\n| Burstable | requests < limits or partial | Middle |\n| BestEffort | No requests or limits set | First evicted |\n\n## Common Pitfalls\n- **No limits set**: Pod gets BestEffort QoS — first to be evicted under memory pressure.\n- **Limits too low**: Container gets OOMKilled repeatedly → CrashLoopBackOff.\n- **CPU limit too tight**: Causes throttling, not OOMKill — manifests as slow response times, hard to diagnose.",
+  "steps": [
+    "Create Deployment 'api-server' with 2 replicas of nginx:alpine",
+    "Set memory request to 64Mi and limit to 128Mi",
+    "Set CPU request to 100m and limit to 200m",
+    "Apply the deployment and verify pods are Running",
+    "Check the QoS class using kubectl describe pod",
+    "Verify QoS class is 'Burstable' (requests != limits)"
+  ],
+  "hints": [
+    "Resources are set per-container under spec.containers[].resources",
+    "CPU is expressed in millicores (100m = 0.1 CPU core)",
+    "Memory uses suffixes: Mi (mebibytes), Gi (gibibytes)",
+    "kubectl describe pod <name> shows QoS class under 'QoS Class:' field"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: api-server\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: api-server\n  template:\n    metadata:\n      labels:\n        app: api-server\n    spec:\n      containers:\n      - name: api\n        image: nginx:alpine\n        ports:\n        - containerPort: 80\n        resources:\n          requests:\n            memory: # TODO: set to 64Mi\n            cpu: # TODO: set to 100m\n          limits:\n            memory: # TODO: set to 128Mi\n            cpu: # TODO: set to 200m"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: api-server\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: api-server\n  template:\n    metadata:\n      labels:\n        app: api-server\n    spec:\n      containers:\n      - name: api\n        image: nginx:alpine\n        ports:\n        - containerPort: 80\n        resources:\n          requests:\n            memory: \"64Mi\"\n            cpu: \"100m\"\n          limits:\n            memory: \"128Mi\"\n            cpu: \"200m\"",
+    "validation_script": "#!/bin/bash\nkubectl apply -f solution.yaml\n\n# Wait for rollout\nkubectl rollout status deployment/api-server --timeout=60s\n\n# Check pods are running\ncount=$(kubectl get pods -l app=api-server --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)\nif [ \"$count\" -lt 2 ]; then\n  echo \"✗ Expected 2 running pods, got $count\"\n  kubectl describe deployment api-server | tail -10\n  exit 1\nfi\necho \"✓ 2 pods running\"\n\n# Check memory request\nmem_req=$(kubectl get deployment api-server -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}')\nif [ \"$mem_req\" != \"64Mi\" ]; then\n  echo \"✗ Expected memory request 64Mi, got $mem_req\"\n  exit 1\nfi\necho \"✓ Memory request: $mem_req\"\n\n# Check memory limit\nmem_limit=$(kubectl get deployment api-server -o jsonpath='{.spec.template.spec.containers[0].resources.limits.memory}')\nif [ \"$mem_limit\" != \"128Mi\" ]; then\n  echo \"✗ Expected memory limit 128Mi, got $mem_limit\"\n  exit 1\nfi\necho \"✓ Memory limit: $mem_limit\"\n\n# Check CPU request\ncpu_req=$(kubectl get deployment api-server -o jsonpath='{.spec.template.spec.containers[0].resources.requests.cpu}')\nif [ \"$cpu_req\" != \"100m\" ]; then\n  echo \"✗ Expected CPU request 100m, got $cpu_req\"\n  exit 1\nfi\necho \"✓ CPU request: $cpu_req\"\n\n# Check QoS class via pod describe\npod=$(kubectl get pods -l app=api-server --no-headers -o custom-columns=':metadata.name' | head -1)\nqos=$(kubectl get pod \"$pod\" -o jsonpath='{.status.qosClass}')\nif [ \"$qos\" != \"Burstable\" ]; then\n  echo \"✗ Expected QoS class Burstable, got $qos\"\n  exit 1\nfi\necho \"✓ QoS class: $qos\"\nexit 0"
+  }
+}

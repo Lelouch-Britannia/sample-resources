@@ -1,9 +1,9 @@
 {
   "slug": "kubernetes-deployment-selector-mismatch",
   "title": "Debug Deployment: Selector Mismatch",
-  "order_index": 4,
+  "order_index": 6,
   "type": "coding",
-  "difficulty": "beginner",
+  "difficulty": "intermediate",
   "description": "Debug and fix a broken deployment manifest that fails to create pods due to a selector mismatch - one of the most common and frustrating Deployment errors.\n\n**Focus**: Understanding the critical immutable relationship between `spec.selector.matchLabels` and `spec.template.metadata.labels`.\n\nThis exercise simulates a real-world scenario where a developer accidentally uses inconsistent labels, resulting in a Deployment that appears to exist but creates zero pods. The error message \"selector does not match template labels\" is Kubernetes preventing an invalid configuration. When labels don't match, the Deployment controller cannot identify which pods it should manage, so it refuses to create any. This validation exists because changing a selector after creation would orphan existing pods, creating management chaos.",
   "steps": [
     "Identify the mismatch between selector labels and template labels",

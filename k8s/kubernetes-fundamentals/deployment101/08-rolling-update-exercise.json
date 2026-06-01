@@ -1,7 +1,7 @@
 {
   "slug": "kubernetes-deployment-rolling-update-practice",
   "title": "Practice: Rolling Update Strategy",
-  "order_index": 6,
+  "order_index": 8,
   "type": "coding",
   "difficulty": "intermediate",
   "description": "Implement a complete rolling update deployment lifecycle including creation, scaling, updating, and rollback verification.\n\n**Focus**: Configuring RollingUpdate strategy with maxSurge and maxUnavailable to ensure zero-downtime updates while practicing the full deployment workflow.\n\nThis exercise teaches the complete deployment lifecycle. You'll configure rolling update parameters, observe how Kubernetes orchestrates the gradual pod replacement during image updates, and verify that the revision history is maintained for rollback capabilities. The \"Pass the Baton\" pattern you'll observe - where the old ReplicaSet scales down (3→2→1→0) while the new ReplicaSet scales up (0→1→2→3) - ensures continuous availability. Understanding this behavior is essential for debugging stuck rollouts and configuring appropriate update parameters.",

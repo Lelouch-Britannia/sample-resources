@@ -1,0 +1,31 @@
+{
+  "slug": "kubernetes-deployment-self-healing",
+  "title": "Deployment Self-Healing Behavior",
+  "order_index": 2,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Observe the Deployment controller's reconciliation loop by deliberately deleting a pod and watching it get recreated automatically.\n\n**Focus**: Understanding that Deployments continuously reconcile actual state against desired state — the core of Kubernetes self-healing.\n\nThis exercise reproduces a common production scenario: a pod crashes or is evicted, and the Deployment controller detects the deficit and spins up a replacement automatically.\n\n## Common Pitfalls\n- **Mistaking ReplicaSet for Deployment**: Deleting a pod managed by a Deployment does NOT reduce replica count — the RS recreates it immediately.\n- **Scaling to 0 breaks health checks**: If you scale to 0 in production, all pods terminate — no graceful drain happens automatically.",
+  "steps": [
+    "Create Deployment 'web-app' with 3 replicas of nginx:alpine",
+    "Verify all 3 pods are Running",
+    "Delete one pod by name using kubectl delete pod",
+    "Immediately run kubectl get pods to observe the replacement pod being created",
+    "Confirm pod count returns to 3 (self-healing confirmed)",
+    "Scale deployment to 0 replicas and verify all pods terminate",
+    "Scale back to 3 replicas and verify pods restart"
+  ],
+  "hints": [
+    "Use kubectl get pods to find a pod name to delete",
+    "Run 'kubectl get pods -w' in a separate terminal to watch events in real time",
+    "Set the app label value to 'web-app' — it must match exactly between spec.selector.matchLabels and the pod template labels",
+    "kubectl scale deploy/web-app --replicas=0 terminates all pods without deleting the Deployment"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web-app\nspec:\n  replicas: # TODO: set to 3\n  selector:\n    matchLabels:\n      app: # TODO: use 'web-app'\n  template:\n    metadata:\n      labels:\n        app: # TODO: use 'web-app'\n    spec:\n      containers:\n      - name: web\n        image: # TODO: use nginx:alpine\n        ports:\n        - containerPort: 80"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web-app\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: web-app\n  template:\n    metadata:\n      labels:\n        app: web-app\n    spec:\n      containers:\n      - name: web\n        image: nginx:alpine\n        ports:\n        - containerPort: 80",
+    "validation_script": "#!/bin/bash\nkubectl apply -f solution.yaml\n\n# Wait for 3 pods\necho 'Waiting for initial 3 pods...'\nkubectl rollout status deployment/web-app --timeout=60s\ncount=$(kubectl get pods -l app=web-app --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)\nif [ \"$count\" -lt 3 ]; then\n  echo \"✗ Expected 3 running pods, got $count\"\n  exit 1\nfi\necho \"✓ 3 pods running\"\n\n# Delete one pod\npod=$(kubectl get pods -l app=web-app --no-headers -o custom-columns=':metadata.name' | head -1)\necho \"Deleting pod: $pod\"\nkubectl delete pod \"$pod\" --grace-period=0\n\n# Wait for replacement\nsleep 10\nkubectl rollout status deployment/web-app --timeout=60s\nnew_count=$(kubectl get pods -l app=web-app --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)\nif [ \"$new_count\" -lt 3 ]; then\n  echo \"✗ Self-healing failed — expected 3 pods after deletion, got $new_count\"\n  exit 1\nfi\necho \"✓ Self-healing confirmed: pod recreated automatically\"\n\n# Scale to 0\nkubectl scale deployment/web-app --replicas=0\nsleep 5\nzero_count=$(kubectl get pods -l app=web-app --no-headers 2>/dev/null | wc -l)\nif [ \"$zero_count\" -ne 0 ]; then\n  echo \"✗ Expected 0 pods after scale-to-0, got $zero_count\"\n  exit 1\nfi\necho \"✓ Scaled to 0 — all pods terminated\"\n\n# Scale back to 3\nkubectl scale deployment/web-app --replicas=3\nkubectl rollout status deployment/web-app --timeout=60s\nfinal_count=$(kubectl get pods -l app=web-app --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)\nif [ \"$final_count\" -lt 3 ]; then\n  echo \"✗ Expected 3 pods after scale-up, got $final_count\"\n  exit 1\nfi\necho \"✓ Scaled back to 3 — all pods running\"\nexit 0"
+  }
+}

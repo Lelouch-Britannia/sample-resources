@@ -1,7 +1,7 @@
 {
   "slug": "kubernetes-deployment-canary-practice",
   "title": "Practice: Canary Deployment Strategy",
-  "order_index": 9,
+  "order_index": 11,
   "type": "coding",
   "difficulty": "advanced",
   "description": "Implement a production-ready canary deployment with gradual traffic shifting from stable to canary version, demonstrating the complete canary rollout lifecycle.\n\n**Focus**: Running stable and canary versions simultaneously with controlled traffic distribution based on replica counts, monitoring health, and progressively increasing canary exposure.\n\nThis exercise demonstrates the full canary pattern where a small percentage of traffic is routed to a new version (canary) while most traffic stays on the stable version. The Service selector must only include common labels (`app: nginx`) to route to both deployments. Traffic splits naturally based on replica ratios: 9 stable + 1 canary = 90/10 split. As you gain confidence in the canary's stability (monitoring error rates, latency, resource usage), you gradually scale canary up and stable down (e.g., 5:5 for 50/50, then 1:9, then 0:10 for full rollout). This progressive exposure minimizes risk compared to all-at-once deployments.",
