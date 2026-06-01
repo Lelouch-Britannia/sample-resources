@@ -1,0 +1,31 @@
+{
+  "slug": "kubernetes-service-clusterip-basic",
+  "title": "ClusterIP Service for Internal Communication",
+  "order_index": 3,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Deploy an Nginx backend Deployment and expose it with a ClusterIP Service. Then verify a second Pod can reach the backend using the Service DNS name — not the Pod IP.\n\n**Why this matters**: ClusterIP is the default and most common Service type. It gives your app a stable internal hostname that survives Pod restarts, enabling reliable service-to-service calls inside the cluster.\n\n**Common Pitfalls**: selector labels on the Service must exactly match the Deployment Pod template labels — a single typo creates an empty Endpoints list and silent connection failures.",
+  "steps": [
+    "Complete the Deployment manifest: set app=backend label on Pod template, use image nginx:alpine, expose containerPort 80",
+    "Complete the ClusterIP Service manifest: set selector app=backend, port 80 targeting containerPort 80",
+    "Add a curl client Pod that runs 'sleep 3600' so you can exec into it",
+    "Apply the manifest with kubectl apply -f solution.yaml",
+    "Verify the Service has endpoints: kubectl get endpoints backend-svc",
+    "Exec into the curl pod and run: curl http://backend-svc — expect an HTML response"
+  ],
+  "hints": [
+    "A ClusterIP Service is the default; you can omit 'type: ClusterIP' or write it explicitly",
+    "Set the label value to 'backend' on the Deployment pod template and match it exactly in the Service selector",
+    "The Service selector must use the same key-value pair as the Pod template labels in the Deployment",
+    "DNS short names work within the same namespace — 'backend-svc' resolves without the full FQDN",
+    "Use 'kubectl get endpoints backend-svc' before testing connectivity to confirm Pods are registered"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# --- Backend Deployment ---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: # TODO: use 'backend'\n  template:\n    metadata:\n      labels:\n        app: # TODO: use 'backend'\n    spec:\n      containers:\n      - name: backend\n        image: # TODO: lightweight nginx image\n        ports:\n        - containerPort: # TODO: HTTP port\n---\n# --- ClusterIP Service ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: backend-svc\nspec:\n  # type: ClusterIP is the default — can be omitted\n  selector:\n    app: # TODO: use 'backend'\n  ports:\n  - port: 80\n    targetPort: # TODO: must match containerPort above\n---\n# --- Curl client Pod ---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: curl-client\nspec:\n  containers:\n  - name: curl\n    image: curlimages/curl:latest\n    command: [\"sleep\", \"3600\"]\n"
+  },
+  "_solution": {
+    "code_solution": "# --- Backend Deployment ---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: backend\n  template:\n    metadata:\n      labels:\n        app: backend\n    spec:\n      containers:\n      - name: backend\n        image: nginx:alpine\n        ports:\n        - containerPort: 80\n---\n# --- ClusterIP Service ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: backend-svc\nspec:\n  selector:\n    app: backend\n  ports:\n  - port: 80\n    targetPort: 80\n---\n# --- Curl client Pod ---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: curl-client\nspec:\n  containers:\n  - name: curl\n    image: curlimages/curl:latest\n    command: [\"sleep\", \"3600\"]\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\necho \"Waiting for backend Deployment to be ready...\"\nkubectl rollout status deployment/backend --timeout=90s\nif [ $? -ne 0 ]; then\n  echo \"✗ backend Deployment did not become ready\"\n  exit 1\nfi\necho \"✓ backend Deployment is ready\"\n\necho \"Waiting for curl-client Pod to be running...\"\ntimeout=60\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  phase=$(kubectl get pod curl-client -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Pending\")\n  if [ \"$phase\" = \"Running\" ]; then\n    break\n  fi\n  sleep 3\n  ((elapsed+=3))\ndone\nif [ \"$phase\" != \"Running\" ]; then\n  echo \"✗ curl-client Pod did not reach Running state\"\n  exit 1\nfi\necho \"✓ curl-client Pod is running\"\n\nENDPOINTS=$(kubectl get endpoints backend-svc -o jsonpath='{.subsets[0].addresses}' 2>/dev/null || echo \"\")\nif [ -z \"$ENDPOINTS\" ] || [ \"$ENDPOINTS\" = \"null\" ]; then\n  echo \"✗ Service backend-svc has no endpoints — check selector labels match Deployment Pod template labels\"\n  exit 1\nfi\necho \"✓ Service backend-svc has endpoints\"\n\nHTTP_CODE=$(kubectl exec curl-client -- curl -s -o /dev/null -w \"%{http_code}\" http://backend-svc 2>/dev/null || echo \"000\")\nif [ \"$HTTP_CODE\" = \"200\" ]; then\n  echo \"✓ curl-client successfully reached backend-svc via ClusterIP DNS (HTTP $HTTP_CODE)\"\n  exit 0\nelse\n  echo \"✗ HTTP request to backend-svc returned code $HTTP_CODE (expected 200)\"\n  exit 1\nfi\n"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "slug": "ingress101",
+  "name": "Ingress 101",
+  "order": 9,
+  "icon": "🌐",
+  "course_slug": "kubernetes-fundamentals"
+}

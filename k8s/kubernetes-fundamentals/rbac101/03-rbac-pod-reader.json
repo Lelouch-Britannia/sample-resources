@@ -1,0 +1,29 @@
+{
+  "slug": "kubernetes-rbac-pod-reader-role",
+  "title": "Role and RoleBinding for Pod Reader",
+  "order_index": 3,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Create a ServiceAccount with read-only Pod access using a Role and RoleBinding.\n\nBuild the minimal RBAC chain: `monitor-sa` ServiceAccount → `pod-reader` Role (get/list/watch pods) → `RoleBinding` connecting them. Verify with `kubectl auth can-i` that the SA can list pods but cannot delete them.\n\n**Common Pitfalls**: Use `apiGroups: [\"\"]` for core resources like pods — not `\"apps\"`. A RoleBinding with the wrong namespace will not apply to the SA. Always verify with `kubectl auth can-i` after creating bindings.",
+  "steps": [
+    "Create a ServiceAccount named monitor-sa in the default namespace",
+    "Create a Role named pod-reader in the default namespace with rules: apiGroups [\"\"], resources [\"pods\"], verbs [\"get\", \"list\", \"watch\"]",
+    "Create a RoleBinding named monitor-binding in the default namespace that binds pod-reader to monitor-sa",
+    "Verify the SA can list pods: kubectl auth can-i list pods --as system:serviceaccount:default:monitor-sa",
+    "Verify the SA cannot delete pods: kubectl auth can-i delete pods --as system:serviceaccount:default:monitor-sa (should output 'no')"
+  ],
+  "hints": [
+    "Pods are in the core API group — use apiGroups: [\"\"] (empty string), not \"apps\"",
+    "In the RoleBinding subjects block: kind: ServiceAccount, name: monitor-sa, namespace: default",
+    "roleRef.kind must be Role (not ClusterRole) since we're binding a namespace-scoped Role",
+    "kubectl auth can-i returns 'yes' or 'no' — use it to confirm before deploying real workloads"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# ServiceAccount\napiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: monitor-sa\n  namespace: default\n---\n# Role: read-only pods\napiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: pod-reader\n  namespace: default\nrules:\n- apiGroups: # TODO: [\"\"] for core API\n  resources: # TODO: [\"pods\"]\n  verbs: # TODO: [\"get\", \"list\", \"watch\"]\n---\n# RoleBinding: connect Role to ServiceAccount\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: monitor-binding\n  namespace: default\nsubjects:\n- kind: ServiceAccount\n  name: monitor-sa\n  namespace: default\nroleRef:\n  kind: Role\n  name: pod-reader\n  apiGroup: rbac.authorization.k8s.io\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: monitor-sa\n  namespace: default\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: pod-reader\n  namespace: default\nrules:\n- apiGroups: [\"\"]\n  resources: [\"pods\"]\n  verbs: [\"get\", \"list\", \"watch\"]\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: monitor-binding\n  namespace: default\nsubjects:\n- kind: ServiceAccount\n  name: monitor-sa\n  namespace: default\nroleRef:\n  kind: Role\n  name: pod-reader\n  apiGroup: rbac.authorization.k8s.io\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\necho \"✓ Resources applied\"\n\n# Verify ServiceAccount\nkubectl get serviceaccount monitor-sa -n default > /dev/null 2>&1 && echo \"✓ ServiceAccount monitor-sa exists\" || { echo \"✗ ServiceAccount monitor-sa not found\"; exit 1; }\n\n# Verify Role\nkubectl get role pod-reader -n default > /dev/null 2>&1 && echo \"✓ Role pod-reader exists\" || { echo \"✗ Role pod-reader not found\"; exit 1; }\n\n# Verify Role rules\nverbs=$(kubectl get role pod-reader -n default -o jsonpath='{.rules[0].verbs[*]}')\nif echo \"$verbs\" | grep -q \"list\" && echo \"$verbs\" | grep -q \"get\" && echo \"$verbs\" | grep -q \"watch\"; then\n  echo \"✓ Role includes get, list, watch verbs\"\nelse\n  echo \"✗ Role verbs incomplete. Found: $verbs\"\n  exit 1\nfi\n\nresources=$(kubectl get role pod-reader -n default -o jsonpath='{.rules[0].resources[*]}')\nif echo \"$resources\" | grep -q \"pods\"; then\n  echo \"✓ Role targets pods resource\"\nelse\n  echo \"✗ Role resources do not include pods. Found: $resources\"\n  exit 1\nfi\n\n# Verify RoleBinding\nkubectl get rolebinding monitor-binding -n default > /dev/null 2>&1 && echo \"✓ RoleBinding monitor-binding exists\" || { echo \"✗ RoleBinding monitor-binding not found\"; exit 1; }\n\n# Test can list pods\ncan_list=$(kubectl auth can-i list pods --as system:serviceaccount:default:monitor-sa -n default)\nif [ \"$can_list\" = \"yes\" ]; then\n  echo \"✓ monitor-sa CAN list pods\"\nelse\n  echo \"✗ monitor-sa cannot list pods (got: $can_list)\"\n  exit 1\nfi\n\n# Test cannot delete pods\ncan_delete=$(kubectl auth can-i delete pods --as system:serviceaccount:default:monitor-sa -n default)\nif [ \"$can_delete\" = \"no\" ]; then\n  echo \"✓ monitor-sa CANNOT delete pods (correct)\"\nelse\n  echo \"✗ monitor-sa should NOT be able to delete pods (got: $can_delete)\"\n  exit 1\nfi\n\necho \"✓ All validations passed\"\nexit 0\n"
+  }
+}

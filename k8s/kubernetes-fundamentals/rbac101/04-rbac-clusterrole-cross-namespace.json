@@ -1,0 +1,29 @@
+{
+  "slug": "kubernetes-rbac-clusterrole-cross-namespace",
+  "title": "ClusterRole for Cross-Namespace Access",
+  "order_index": 4,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Grant a ServiceAccount read access to ConfigMaps across ALL namespaces using a ClusterRole and ClusterRoleBinding.\n\nCreate `configmap-reader` ClusterRole (get/list), `cm-reader-sa` ServiceAccount, and a ClusterRoleBinding. Verify the SA can list configmaps in `kube-system` but cannot create them.\n\n**Common Pitfalls**: ClusterRoleBinding is cluster-wide — use only when cross-namespace access is needed. ConfigMaps are in `apiGroups: [\"\"]`. The SA `namespace` field is still required in the subjects block.",
+  "steps": [
+    "Create a ServiceAccount named cm-reader-sa in the default namespace",
+    "Create a ClusterRole named configmap-reader with rules: apiGroups [\"\"], resources [\"configmaps\"], verbs [\"get\", \"list\"]",
+    "Create a ClusterRoleBinding named configmap-reader-binding that binds configmap-reader to cm-reader-sa",
+    "Verify SA can list configmaps in kube-system: kubectl auth can-i list configmaps --as system:serviceaccount:default:cm-reader-sa -n kube-system",
+    "Verify SA cannot create configmaps: kubectl auth can-i create configmaps --as system:serviceaccount:default:cm-reader-sa (should output 'no')"
+  ],
+  "hints": [
+    "ClusterRole and ClusterRoleBinding have no namespace in their metadata",
+    "In ClusterRoleBinding subjects, still specify namespace: default for the ServiceAccount",
+    "kubectl auth can-i list configmaps -n kube-system tests namespace-scoped access; the SA should answer 'yes' due to the ClusterRoleBinding",
+    "ConfigMaps belong to apiGroups: [\"\"] — the empty string core API group"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# ServiceAccount\napiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: cm-reader-sa\n  namespace: default\n---\n# ClusterRole: read configmaps cluster-wide\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: configmap-reader\nrules:\n- apiGroups: # TODO: [\"\"] for core API\n  resources: # TODO: [\"configmaps\"]\n  verbs: # TODO: [\"get\", \"list\"]\n---\n# ClusterRoleBinding\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata:\n  name: configmap-reader-binding\nsubjects:\n- kind: ServiceAccount\n  name: cm-reader-sa\n  namespace: default\nroleRef:\n  kind: ClusterRole\n  name: configmap-reader\n  apiGroup: rbac.authorization.k8s.io\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: cm-reader-sa\n  namespace: default\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: configmap-reader\nrules:\n- apiGroups: [\"\"]\n  resources: [\"configmaps\"]\n  verbs: [\"get\", \"list\"]\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata:\n  name: configmap-reader-binding\nsubjects:\n- kind: ServiceAccount\n  name: cm-reader-sa\n  namespace: default\nroleRef:\n  kind: ClusterRole\n  name: configmap-reader\n  apiGroup: rbac.authorization.k8s.io\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\necho \"✓ Resources applied\"\n\n# ServiceAccount\nkubectl get serviceaccount cm-reader-sa -n default > /dev/null 2>&1 && echo \"✓ ServiceAccount cm-reader-sa exists\" || { echo \"✗ cm-reader-sa not found\"; exit 1; }\n\n# ClusterRole\nkubectl get clusterrole configmap-reader > /dev/null 2>&1 && echo \"✓ ClusterRole configmap-reader exists\" || { echo \"✗ ClusterRole configmap-reader not found\"; exit 1; }\n\n# Verify ClusterRole rules\nresources=$(kubectl get clusterrole configmap-reader -o jsonpath='{.rules[0].resources[*]}')\nif echo \"$resources\" | grep -q \"configmaps\"; then\n  echo \"✓ ClusterRole targets configmaps\"\nelse\n  echo \"✗ ClusterRole resources do not include configmaps. Found: $resources\"\n  exit 1\nfi\n\nverbs=$(kubectl get clusterrole configmap-reader -o jsonpath='{.rules[0].verbs[*]}')\nif echo \"$verbs\" | grep -q \"list\" && echo \"$verbs\" | grep -q \"get\"; then\n  echo \"✓ ClusterRole includes get and list verbs\"\nelse\n  echo \"✗ ClusterRole verbs incomplete. Found: $verbs\"\n  exit 1\nfi\n\n# ClusterRoleBinding\nkubectl get clusterrolebinding configmap-reader-binding > /dev/null 2>&1 && echo \"✓ ClusterRoleBinding configmap-reader-binding exists\" || { echo \"✗ ClusterRoleBinding not found\"; exit 1; }\n\n# Test can list configmaps in kube-system\ncan_list=$(kubectl auth can-i list configmaps --as system:serviceaccount:default:cm-reader-sa -n kube-system)\nif [ \"$can_list\" = \"yes\" ]; then\n  echo \"✓ cm-reader-sa CAN list configmaps in kube-system\"\nelse\n  echo \"✗ cm-reader-sa cannot list configmaps in kube-system (got: $can_list)\"\n  exit 1\nfi\n\n# Test cannot create configmaps\ncan_create=$(kubectl auth can-i create configmaps --as system:serviceaccount:default:cm-reader-sa -n default)\nif [ \"$can_create\" = \"no\" ]; then\n  echo \"✓ cm-reader-sa CANNOT create configmaps (correct)\"\nelse\n  echo \"✗ cm-reader-sa should NOT be able to create configmaps (got: $can_create)\"\n  exit 1\nfi\n\necho \"✓ All validations passed\"\nexit 0\n"
+  }
+}

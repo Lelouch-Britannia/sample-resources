@@ -1,0 +1,7 @@
+{
+  "slug": "rbac101",
+  "name": "RBAC 101",
+  "order": 10,
+  "icon": "🔐",
+  "course_slug": "kubernetes-fundamentals"
+}

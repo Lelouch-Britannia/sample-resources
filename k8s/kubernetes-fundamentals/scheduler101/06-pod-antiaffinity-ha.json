@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-pod-antiaffinity-ha",
+  "title": "Pod Anti-Affinity for HA Spread",
+  "order_index": 6,
+  "type": "coding",
+  "difficulty": "advanced",
+  "description": "Deploy a 3-replica Deployment with `requiredDuringScheduling` podAntiAffinity on `kubernetes.io/hostname` topology key. This ensures no two replicas ever land on the same node — a high-availability pattern that survives single-node failures.\n\n**Common Pitfalls:** With `required` anti-affinity and more replicas than nodes, excess replicas stay Pending forever. For clusters with fewer nodes than replicas, switch to `preferred` anti-affinity. The `topologyKey` must be a real node label — `kubernetes.io/hostname` is always present; zone labels require cloud provider setup.",
+  "steps": [
+    "Create a Deployment 'ha-app' with 3 replicas and app=ha-app label",
+    "Add requiredDuringSchedulingIgnoredDuringExecution podAntiAffinity using labelSelector on app=ha-app",
+    "Set topologyKey to kubernetes.io/hostname to spread one pod per node",
+    "Apply and verify: kubectl get pods -o wide shows each pod on a different node",
+    "Scale to 4+ replicas if cluster has only 3 nodes — observe extra pod stays Pending"
+  ],
+  "hints": [
+    "podAntiAffinity is under spec.template.spec.affinity, not spec.affinity",
+    "labelSelector.matchLabels must match the pod's own labels to create self-anti-affinity",
+    "topologyKey: kubernetes.io/hostname means 'no two matched pods on the same hostname'",
+    "kubectl get pods -o wide shows the NODE column for each pod",
+    "Use 'ha-app' as the app label value in selector.matchLabels, template.metadata.labels, and the antiaffinity matchLabels — all three must match"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: ha-app\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: # TODO: use 'ha-app'\n  template:\n    metadata:\n      labels:\n        app: # TODO: use 'ha-app'\n    spec:\n      affinity:\n        podAntiAffinity:\n          requiredDuringSchedulingIgnoredDuringExecution:\n          - labelSelector:\n              matchLabels:\n                app: # TODO: use 'ha-app'\n            topologyKey: kubernetes.io/hostname\n      containers:\n      - name: app\n        image: nginx:alpine\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: ha-app\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: ha-app\n  template:\n    metadata:\n      labels:\n        app: ha-app\n    spec:\n      affinity:\n        podAntiAffinity:\n          requiredDuringSchedulingIgnoredDuringExecution:\n          - labelSelector:\n              matchLabels:\n                app: ha-app\n            topologyKey: kubernetes.io/hostname\n      containers:\n      - name: app\n        image: nginx:alpine\n",
+    "validation_script": "#!/bin/bash\nset -e\n\necho 'Checking Deployment ha-app exists...'\nif ! kubectl get deployment ha-app &>/dev/null; then\n  echo '✗ Deployment ha-app not found'\n  exit 1\nfi\necho '✓ Deployment ha-app exists'\n\necho 'Checking replicas is 3...'\nREPLICAS=$(kubectl get deployment ha-app -o jsonpath='{.spec.replicas}')\nif [ \"$REPLICAS\" != \"3\" ]; then\n  echo \"✗ Expected 3 replicas, got $REPLICAS\"\n  exit 1\nfi\necho '✓ Deployment has 3 replicas'\n\necho 'Checking podAntiAffinity is configured...'\nANTI=$(kubectl get deployment ha-app -o jsonpath='{.spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution}')\nif [ -z \"$ANTI\" ] || [ \"$ANTI\" = \"null\" ] || [ \"$ANTI\" = \"[]\" ]; then\n  echo '✗ requiredDuringScheduling podAntiAffinity not set'\n  exit 1\nfi\necho '✓ podAntiAffinity requiredDuringScheduling is configured'\n\necho 'Checking topologyKey is kubernetes.io/hostname...'\nTOPO=$(kubectl get deployment ha-app -o jsonpath='{.spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey}')\nif [ \"$TOPO\" != \"kubernetes.io/hostname\" ]; then\n  echo \"✗ topologyKey expected 'kubernetes.io/hostname', got '$TOPO'\"\n  exit 1\nfi\necho '✓ topologyKey is kubernetes.io/hostname'\n\necho 'Checking labelSelector matches app=ha-app...'\nSEL=$(kubectl get deployment ha-app -o jsonpath='{.spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels.app}')\nif [ \"$SEL\" != \"ha-app\" ]; then\n  echo \"✗ labelSelector.matchLabels.app expected 'ha-app', got '$SEL'\"\n  exit 1\nfi\necho '✓ labelSelector matches app=ha-app'\n\necho 'Waiting for available replicas...'\nkubectl rollout status deployment/ha-app --timeout=120s || true\n\nRUNNING=$(kubectl get pods -l app=ha-app --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)\nNODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)\necho \"Running pods: $RUNNING / Node count: $NODE_COUNT\"\n\nif [ \"$RUNNING\" -gt 1 ]; then\n  echo 'Checking all running pods are on different nodes...'\n  NODES_USED=$(kubectl get pods -l app=ha-app -o jsonpath='{.items[*].spec.nodeName}' | tr ' ' '\\n' | sort)\n  UNIQUE_NODES=$(echo \"$NODES_USED\" | sort -u | wc -l)\n  TOTAL_RUNNING_PODS=$(echo \"$NODES_USED\" | wc -l)\n  if [ \"$UNIQUE_NODES\" -eq \"$TOTAL_RUNNING_PODS\" ]; then\n    echo '✓ All running pods are on different nodes'\n  else\n    echo \"✗ Multiple pods on the same node (unique nodes: $UNIQUE_NODES, running pods counted: $TOTAL_RUNNING_PODS)\"\n    exit 1\n  fi\nfi\n\necho ''\necho 'All checks passed!'\nexit 0\n"
+  }
+}

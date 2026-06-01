@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-service-debug-endpoints",
+  "title": "Debug a Service with No Endpoints",
+  "order_index": 5,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "A Service exists but curl returns 'Connection refused'. Diagnose why the Service has no Endpoints and fix the root cause — a selector mismatch between the Service and the Deployment's Pod labels.\n\n**Why this matters**: Selector mismatch is the single most common Service bug. Learning to spot empty Endpoints instantly narrows down 80% of Service connectivity issues.\n\n**Common Pitfalls**: The fix must be in the Service selector, not the Deployment labels (changing labels would break other things). Always check Endpoints before assuming a network policy or firewall is to blame.",
+  "steps": [
+    "Apply the broken manifests with kubectl apply -f solution.yaml",
+    "Check endpoints: kubectl get endpoints web-backend-svc — notice the list is empty",
+    "Inspect the Deployment labels: kubectl get deployment web-backend -o jsonpath='{.spec.template.metadata.labels}'",
+    "Inspect the Service selector: kubectl get svc web-backend-svc -o jsonpath='{.spec.selector}'",
+    "Fix the Service selector to match the actual Deployment label (app=web-backend)",
+    "Reapply and verify endpoints are now populated, then test connectivity"
+  ],
+  "hints": [
+    "Run 'kubectl get endpoints web-backend-svc' — empty subsets means no Pods matched the selector",
+    "Compare the Service's spec.selector with the Deployment's spec.template.metadata.labels carefully",
+    "The Deployment labels use app=web-backend but the Service selector uses app=backend — spot the difference",
+    "After fixing and reapplying, endpoints should show Pod IPs within a few seconds"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# --- Deployment: labels are app=web-backend ---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web-backend\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: web-backend\n  template:\n    metadata:\n      labels:\n        app: web-backend   # <-- actual Pod label\n    spec:\n      containers:\n      - name: web-backend\n        image: nginx:alpine\n        ports:\n        - containerPort: 80\n---\n# --- Service: selector is WRONG (app=backend instead of app=web-backend) ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: web-backend-svc\nspec:\n  selector:\n    app: backend           # TODO: fix this — it does not match the Deployment label\n  ports:\n  - port: 80\n    targetPort: 80\n---\n# --- Curl client to test connectivity ---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: debug-client\nspec:\n  containers:\n  - name: curl\n    image: curlimages/curl:latest\n    command: [\"sleep\", \"3600\"]\n"
+  },
+  "_solution": {
+    "code_solution": "# --- Deployment: labels are app=web-backend ---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web-backend\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: web-backend\n  template:\n    metadata:\n      labels:\n        app: web-backend\n    spec:\n      containers:\n      - name: web-backend\n        image: nginx:alpine\n        ports:\n        - containerPort: 80\n---\n# --- Service: selector FIXED to match Deployment label ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: web-backend-svc\nspec:\n  selector:\n    app: web-backend       # fixed: matches Deployment Pod template label\n  ports:\n  - port: 80\n    targetPort: 80\n---\n# --- Curl client to test connectivity ---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: debug-client\nspec:\n  containers:\n  - name: curl\n    image: curlimages/curl:latest\n    command: [\"sleep\", \"3600\"]\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\necho \"Waiting for web-backend Deployment to be ready...\"\nkubectl rollout status deployment/web-backend --timeout=90s\nif [ $? -ne 0 ]; then\n  echo \"✗ web-backend Deployment did not become ready\"\n  exit 1\nfi\necho \"✓ web-backend Deployment is ready\"\n\necho \"Waiting for debug-client Pod...\"\ntimeout=60\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  phase=$(kubectl get pod debug-client -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Pending\")\n  if [ \"$phase\" = \"Running\" ]; then break; fi\n  sleep 3\n  ((elapsed+=3))\ndone\nif [ \"$phase\" != \"Running\" ]; then\n  echo \"✗ debug-client Pod did not reach Running state\"\n  exit 1\nfi\necho \"✓ debug-client Pod is running\"\n\nSVC_SELECTOR=$(kubectl get svc web-backend-svc -o jsonpath='{.spec.selector.app}' 2>/dev/null || echo \"\")\nif [ \"$SVC_SELECTOR\" != \"web-backend\" ]; then\n  echo \"✗ Service selector app='$SVC_SELECTOR', expected 'web-backend'\"\n  echo \"  The selector mismatch is still present — fix spec.selector.app to match the Deployment label\"\n  exit 1\nfi\necho \"✓ Service selector is correct (app=web-backend)\"\n\nENDPOINT_COUNT=$(kubectl get endpoints web-backend-svc -o jsonpath='{.subsets[0].addresses}' 2>/dev/null | python3 -c \"import sys,json; data=sys.stdin.read(); print(len(json.loads(data)) if data.strip() and data.strip()!='null' else 0)\" 2>/dev/null || echo \"0\")\nif [ \"$ENDPOINT_COUNT\" -lt 1 ] 2>/dev/null; then\n  echo \"✗ Service web-backend-svc still has no endpoints\"\n  kubectl get endpoints web-backend-svc\n  exit 1\nfi\necho \"✓ Service web-backend-svc has $ENDPOINT_COUNT endpoint(s)\"\n\nHTTP_CODE=$(kubectl exec debug-client -- curl -s -o /dev/null -w \"%{http_code}\" http://web-backend-svc 2>/dev/null || echo \"000\")\nif [ \"$HTTP_CODE\" = \"200\" ]; then\n  echo \"✓ Connectivity verified: HTTP $HTTP_CODE from debug-client to web-backend-svc\"\n  exit 0\nelse\n  echo \"✗ HTTP request returned $HTTP_CODE (expected 200)\"\n  exit 1\nfi\n"
+  }
+}

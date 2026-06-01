@@ -1,0 +1,31 @@
+{
+  "slug": "kubernetes-scheduler-nodeselector",
+  "title": "Schedule Pod with nodeSelector",
+  "order_index": 3,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Label a node with `disktype=ssd` and deploy a Pod that only schedules on nodes carrying that label. Then observe what happens when the label is removed — the next pod will be stuck Pending because no node matches the selector.\n\n**Common Pitfalls:** `nodeSelector` is a hard constraint. If no node has the required label, the pod stays Pending forever. Use `kubectl describe pod` to see the scheduling failure reason in Events.",
+  "steps": [
+    "Label a node: kubectl label node <node-name> disktype=ssd",
+    "Define a Pod 'ssd-app' with nodeSelector: disktype: ssd",
+    "Apply the manifest and verify the pod is Running on the labeled node",
+    "Check placement: kubectl get pod ssd-app -o wide",
+    "Remove the label: kubectl label node <node-name> disktype-",
+    "Delete and recreate the pod — observe it stays Pending due to unmatched nodeSelector"
+  ],
+  "hints": [
+    "kubectl get nodes shows available node names",
+    "nodeSelector is a map directly under spec — same level as containers",
+    "kubectl get pod ssd-app -o wide shows the Node column",
+    "Use kubectl describe pod ssd-app to read scheduling failure events",
+    "Set disktype to 'ssd' in nodeSelector to match the label you added to the node"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: ssd-app\nspec:\n  containers:\n  - name: app\n    image: nginx:alpine\n  nodeSelector:\n    disktype: # TODO: use 'ssd'\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: ssd-app\nspec:\n  containers:\n  - name: app\n    image: nginx:alpine\n  nodeSelector:\n    disktype: ssd\n",
+    "validation_script": "#!/bin/bash\nset -e\n\necho 'Checking Pod ssd-app exists...'\nif ! kubectl get pod ssd-app &>/dev/null; then\n  echo '✗ Pod ssd-app not found'\n  exit 1\nfi\necho '✓ Pod ssd-app exists'\n\necho 'Checking Pod has nodeSelector disktype=ssd...'\nSELECTOR=$(kubectl get pod ssd-app -o jsonpath='{.spec.nodeSelector.disktype}')\nif [ \"$SELECTOR\" != \"ssd\" ]; then\n  echo \"✗ nodeSelector disktype expected 'ssd', got '$SELECTOR'\"\n  exit 1\nfi\necho '✓ nodeSelector disktype=ssd is set'\n\necho 'Checking if any node has disktype=ssd label...'\nSSD_NODES=$(kubectl get nodes -l disktype=ssd --no-headers 2>/dev/null | wc -l)\nif [ \"$SSD_NODES\" -gt 0 ]; then\n  echo \"✓ Found $SSD_NODES node(s) with disktype=ssd\"\n  echo 'Waiting for Pod ssd-app to be Running...'\n  kubectl wait pod ssd-app --for=condition=Ready --timeout=60s\n  echo '✓ Pod ssd-app is Running'\n  ASSIGNED_NODE=$(kubectl get pod ssd-app -o jsonpath='{.spec.nodeName}')\n  NODE_LABEL=$(kubectl get node \"$ASSIGNED_NODE\" -o jsonpath='{.metadata.labels.disktype}' 2>/dev/null)\n  if [ \"$NODE_LABEL\" = \"ssd\" ]; then\n    echo \"✓ Pod is running on node with disktype=ssd: $ASSIGNED_NODE\"\n  else\n    echo '✗ Pod is NOT running on a disktype=ssd node'\n    exit 1\n  fi\nelse\n  echo 'No node with disktype=ssd found — pod will be Pending (expected if testing label removal)'\n  POD_PHASE=$(kubectl get pod ssd-app -o jsonpath='{.status.phase}')\n  if [ \"$POD_PHASE\" = \"Pending\" ]; then\n    echo '✓ Pod is correctly Pending when no matching node exists'\n  fi\nfi\n\necho ''\necho 'All checks passed!'\nexit 0\n"
+  }
+}

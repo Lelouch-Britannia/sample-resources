@@ -1,0 +1,160 @@
+{
+  "slug": "kubernetes-ingress-controllers-annotations",
+  "title": "Ingress Controllers and Annotations",
+  "order_index": 2,
+  "type": "conceptual",
+  "difficulty": "intermediate",
+  "description": "Explore the Ingress Controller ecosystem, how annotations extend controller behavior, and how multiple Ingress resources are merged into one running proxy configuration.\n\n## Overview\nWhile the Ingress API is standardized, the behavior of advanced features is delegated to the controller implementation. Annotations are the primary escape hatch for controller-specific configuration that the Ingress spec itself does not cover. Understanding annotations — and their scope — prevents hours of debugging.\n\n## Common Ingress Controllers\n\n| Controller | Backing Proxy | Notes |\n|---|---|---|\n| **ingress-nginx** | Nginx | Most popular; enormous annotation library |\n| **Traefik** | Traefik | Native Kubernetes CRDs; great for dynamic config |\n| **Contour** | Envoy | HTTPProxy CRD; strong gRPC/HTTP2 |\n| **HAProxy Ingress** | HAProxy | High throughput, fine-grained TCP tuning |\n\nInstall exactly one controller per `IngressClass` name. Multiple controllers can coexist in the same cluster using different class names.\n\n## Annotations — Controller-Specific Config\nAnnotations live in `metadata.annotations` and are read exclusively by the controller that owns the Ingress. nginx-ingress examples:\n\n```yaml\nmetadata:\n  annotations:\n    # Strip path prefix before forwarding to backend\n    nginx.ingress.kubernetes.io/rewrite-target: /$2\n    # Limit request body size (default 1m)\n    nginx.ingress.kubernetes.io/proxy-body-size: \"10m\"\n    # Force HTTP → HTTPS redirect\n    nginx.ingress.kubernetes.io/ssl-redirect: \"true\"\n    # Rate limiting\n    nginx.ingress.kubernetes.io/limit-rps: \"20\"\n    # Basic auth\n    nginx.ingress.kubernetes.io/auth-type: basic\n    nginx.ingress.kubernetes.io/auth-secret: basic-auth-secret\n```\n\n## Path Rewriting with Capture Groups\nA common source of confusion: you want requests to `/app/foo` forwarded as `/foo` to the backend. Use a capture group in `path` and reference it in `rewrite-target`:\n\n```yaml\nmetadata:\n  annotations:\n    nginx.ingress.kubernetes.io/rewrite-target: /$2\nspec:\n  rules:\n  - host: example.com\n    http:\n      paths:\n      - path: /app(/|$)(.*)\n        pathType: ImplementationSpecific\n        backend:\n          service:\n            name: my-service\n            port:\n              number: 80\n```\n\nHere `$2` captures everything after `/app`, so `/app/users` becomes `/users` at the backend. Without this, `/app/users` reaches the backend as `/app/users`, which most apps do not expect.\n\n## Multiple Ingress Resources\nControllers merge all Ingress resources in all namespaces into a single nginx/Envoy configuration. Rules are combined — each Ingress contributes its host+path entries. This means:\n- Two teams can own separate Ingress resources for the same controller\n- Conflicting rules (same host + same path in two Ingress resources) cause unpredictable behavior — the controller may pick one silently\n- Use namespaces and RBAC to prevent teams from accidentally conflicting\n\n## IngressClass Resource\n`IngressClass` decouples the controller from the Ingress resource and allows multiple controllers to coexist:\n\n```yaml\napiVersion: networking.k8s.io/v1\nkind: IngressClass\nmetadata:\n  name: nginx-internal\n  annotations:\n    ingressclass.kubernetes.io/is-default-class: \"false\"\nspec:\n  controller: k8s.io/ingress-nginx\n  parameters:\n    apiGroup: k8s.example.com\n    kind: IngressParameters\n    name: nginx-internal-params\n```\n\nSet `ingressclass.kubernetes.io/is-default-class: \"true\"` on one class to make it the default for Ingresses that omit `spec.ingressClassName`.\n\n## Default Backend\nAny request that does not match a defined host+path rule falls through to the `defaultBackend`. Configure it at the controller level (applies globally) or per Ingress resource. A simple catch-all returning HTTP 404 or a branded error page is best practice.\n\n## Common Pitfalls\n- **Annotations are controller-scoped**: nginx annotations on a Traefik-controlled Ingress are silently ignored. Always confirm which controller manages the resource.\n- **rewrite-target capture group gotcha**: if you add a capture group to `path` but forget to update `rewrite-target`, Nginx returns a 500 because `$2` is undefined.\n- **Conflicting rules**: same host+path in two Ingress objects → one silently wins. Use `kubectl describe ingress` to see which backend is active.\n- **No default IngressClass**: if `spec.ingressClassName` is omitted and no default class exists, the Ingress is orphaned.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "An Ingress has the annotation nginx.ingress.kubernetes.io/ssl-redirect: \"true\" but the cluster uses Traefik as its controller. What happens?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Traefik reads the annotation and enables SSL redirect"
+        },
+        {
+          "id": "b",
+          "text": "The Ingress fails to apply and returns a validation error"
+        },
+        {
+          "id": "c",
+          "text": "The annotation is silently ignored by Traefik"
+        },
+        {
+          "id": "d",
+          "text": "Kubernetes automatically translates the annotation to Traefik format"
+        }
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What is the purpose of the IngressClass resource?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It defines which Pods are allowed to receive Ingress traffic"
+        },
+        {
+          "id": "b",
+          "text": "It maps a class name to a specific Ingress Controller, allowing multiple controllers to coexist in one cluster"
+        },
+        {
+          "id": "c",
+          "text": "It replaces the need for annotations on Ingress resources"
+        },
+        {
+          "id": "d",
+          "text": "It is only needed when using TLS termination"
+        }
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "You route /app(.*) to a backend but requests arrive with the /app prefix intact. Which annotation fixes this for nginx-ingress?",
+      "options": [
+        {
+          "id": "a",
+          "text": "nginx.ingress.kubernetes.io/proxy-body-size"
+        },
+        {
+          "id": "b",
+          "text": "nginx.ingress.kubernetes.io/rewrite-target"
+        },
+        {
+          "id": "c",
+          "text": "nginx.ingress.kubernetes.io/ssl-redirect"
+        },
+        {
+          "id": "d",
+          "text": "nginx.ingress.kubernetes.io/backend-protocol"
+        }
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "Two Ingress resources in different namespaces define the same host (example.com) and path (/api) for the same nginx-ingress controller. What is the most likely result?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Both Ingress resources are invalid and rejected"
+        },
+        {
+          "id": "b",
+          "text": "Traffic is load-balanced across both backends equally"
+        },
+        {
+          "id": "c",
+          "text": "One backend silently wins; behavior is unpredictable"
+        },
+        {
+          "id": "d",
+          "text": "Kubernetes creates a merged Ingress resource automatically"
+        }
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "Which annotation marks an IngressClass as the default for Ingresses that omit spec.ingressClassName?",
+      "options": [
+        {
+          "id": "a",
+          "text": "ingressclass.kubernetes.io/default: \"true\""
+        },
+        {
+          "id": "b",
+          "text": "ingressclass.kubernetes.io/is-default-class: \"true\""
+        },
+        {
+          "id": "c",
+          "text": "spec.defaultClass: true in the IngressClass"
+        },
+        {
+          "id": "d",
+          "text": "kubernetes.io/ingress-class: default"
+        }
+      ]
+    },
+    {
+      "id": "q6",
+      "question": "In nginx-ingress path rewriting, what does the capture group $2 represent in rewrite-target: /$2 when path is /app(/|$)(.*)?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The entire original path including /app"
+        },
+        {
+          "id": "b",
+          "text": "The first capture group, which is / or empty string"
+        },
+        {
+          "id": "c",
+          "text": "Everything after /app, effectively stripping the /app prefix"
+        },
+        {
+          "id": "d",
+          "text": "The hostname of the request"
+        }
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "c",
+      "q2": "b",
+      "q3": "b",
+      "q4": "c",
+      "q5": "b",
+      "q6": "c"
+    },
+    "quiz_explanations": {
+      "q1": "Annotations are controller-specific and are only meaningful to the controller that implements them. Traefik does not read nginx.ingress.kubernetes.io/* annotations. They are stored in the Ingress metadata but completely ignored by Traefik, with no error or warning.",
+      "q2": "IngressClass resources register a named class associated with a specific controller implementation. Multiple controllers (e.g., one for internal traffic, one for external) can run in the same cluster, each owning Ingresses that reference their respective class names.",
+      "q3": "nginx.ingress.kubernetes.io/rewrite-target allows you to rewrite the upstream URL path before forwarding to the backend. Combined with a regex capture group in spec.rules[].http.paths[].path, you can strip prefixes from the URL.",
+      "q4": "nginx-ingress merges all Ingress resources into one Nginx configuration. When two rules conflict (same host + path), the controller picks one — typically the oldest or alphabetically first — silently. The other rule is dropped, causing hard-to-debug routing failures.",
+      "q5": "Setting the annotation ingressclass.kubernetes.io/is-default-class: 'true' on an IngressClass resource makes it the cluster default. Any Ingress created without spec.ingressClassName will be assigned to this class automatically.",
+      "q6": "In the regex /app(/|$)(.*), $1 is the first group (/ or end of string) and $2 is the second group capturing everything after /app. So rewrite-target: /$2 effectively strips the /app prefix: /app/users becomes /users at the backend."
+    }
+  }
+}

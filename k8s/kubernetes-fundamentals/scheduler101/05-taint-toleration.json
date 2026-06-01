@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-taint-toleration",
+  "title": "Taint Node and Add Toleration",
+  "order_index": 5,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Taint a node with `dedicated=gpu:NoSchedule`, then observe that a Pod without a toleration stays Pending while a Pod with a matching toleration schedules on the tainted node. This models dedicated node pools (GPU, high-memory) where only specific workloads are allowed.\n\n**Common Pitfalls:** A toleration only permits scheduling on a tainted node — it does not force it. Without `nodeAffinity` or `nodeSelector`, the tolerated pod may schedule on any node. Remember to untaint the node after the exercise or other workloads may be blocked.",
+  "steps": [
+    "Taint a node: kubectl taint node <node-name> dedicated=gpu:NoSchedule",
+    "Apply the manifest with both Pod definitions",
+    "Observe 'gpu-intolerant' Pod stays Pending (no toleration for the taint)",
+    "Observe 'gpu-worker' Pod schedules on the tainted node (has matching toleration)",
+    "Untaint the node: kubectl taint node <node-name> dedicated=gpu:NoSchedule-"
+  ],
+  "hints": [
+    "tolerations is a list under spec — each item has key, operator, value, and effect",
+    "operator: Equal requires key, value, and effect to all match the taint",
+    "A pod without any tolerations cannot schedule on a NoSchedule tainted node",
+    "kubectl describe pod <name> Events shows: '0/1 nodes are available: 1 node(s) had untolerated taint'",
+    "The toleration on gpu-worker must match the taint: key='dedicated', value='gpu', effect='NoSchedule'"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# Pod WITHOUT toleration — will be Pending on tainted node\napiVersion: v1\nkind: Pod\nmetadata:\n  name: gpu-intolerant\nspec:\n  containers:\n  - name: app\n    image: busybox\n    command: ['sh', '-c', 'echo running && sleep 3600']\n---\n# Pod WITH matching toleration — can schedule on tainted node\napiVersion: v1\nkind: Pod\nmetadata:\n  name: gpu-worker\nspec:\n  tolerations:\n  - key: # TODO: use 'dedicated'\n    operator: Equal\n    value: # TODO: use 'gpu'\n    effect: # TODO: use 'NoSchedule'\n  containers:\n  - name: worker\n    image: busybox\n    command: ['sh', '-c', 'echo gpu workload running && sleep 3600']\n"
+  },
+  "_solution": {
+    "code_solution": "# Pod WITHOUT toleration — will be Pending on tainted node\napiVersion: v1\nkind: Pod\nmetadata:\n  name: gpu-intolerant\nspec:\n  containers:\n  - name: app\n    image: busybox\n    command: ['sh', '-c', 'echo running && sleep 3600']\n---\n# Pod WITH matching toleration — can schedule on tainted node\napiVersion: v1\nkind: Pod\nmetadata:\n  name: gpu-worker\nspec:\n  tolerations:\n  - key: \"dedicated\"\n    operator: Equal\n    value: \"gpu\"\n    effect: NoSchedule\n  containers:\n  - name: worker\n    image: busybox\n    command: ['sh', '-c', 'echo gpu workload running && sleep 3600']\n",
+    "validation_script": "#!/bin/bash\nset -e\n\necho 'Checking Pod gpu-worker exists...'\nif ! kubectl get pod gpu-worker &>/dev/null; then\n  echo '✗ Pod gpu-worker not found'\n  exit 1\nfi\necho '✓ Pod gpu-worker exists'\n\necho 'Checking gpu-worker has toleration for dedicated=gpu:NoSchedule...'\nTOL_KEY=$(kubectl get pod gpu-worker -o jsonpath='{.spec.tolerations[?(@.key==\"dedicated\")].key}')\nTOL_VAL=$(kubectl get pod gpu-worker -o jsonpath='{.spec.tolerations[?(@.key==\"dedicated\")].value}')\nTOL_EFF=$(kubectl get pod gpu-worker -o jsonpath='{.spec.tolerations[?(@.key==\"dedicated\")].effect}')\n\nif [ \"$TOL_KEY\" != \"dedicated\" ]; then\n  echo '✗ Toleration key \"dedicated\" not found on gpu-worker'\n  exit 1\nfi\nif [ \"$TOL_VAL\" != \"gpu\" ]; then\n  echo \"✗ Toleration value expected 'gpu', got '$TOL_VAL'\"\n  exit 1\nfi\nif [ \"$TOL_EFF\" != \"NoSchedule\" ]; then\n  echo \"✗ Toleration effect expected 'NoSchedule', got '$TOL_EFF'\"\n  exit 1\nfi\necho '✓ gpu-worker has correct toleration (dedicated=gpu:NoSchedule)'\n\necho 'Checking Pod gpu-intolerant exists...'\nif ! kubectl get pod gpu-intolerant &>/dev/null; then\n  echo '✗ Pod gpu-intolerant not found'\n  exit 1\nfi\necho '✓ Pod gpu-intolerant exists'\n\necho 'Checking gpu-intolerant has NO dedicated toleration...'\nINTOL_KEY=$(kubectl get pod gpu-intolerant -o jsonpath='{.spec.tolerations[?(@.key==\"dedicated\")].key}')\nif [ \"$INTOL_KEY\" = \"dedicated\" ]; then\n  echo '✗ gpu-intolerant should NOT have a dedicated toleration'\n  exit 1\nfi\necho '✓ gpu-intolerant correctly has no dedicated toleration'\n\necho ''\necho 'All checks passed!'\nexit 0\n"
+  }
+}

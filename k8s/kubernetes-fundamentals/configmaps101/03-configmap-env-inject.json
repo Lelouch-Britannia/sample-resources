@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-configmap-env-inject",
+  "title": "Inject ConfigMap as Environment Variables",
+  "order_index": 3,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Deploy an nginx Pod that reads database connection settings from a ConfigMap as environment variables using `envFrom`. This pattern keeps your container image generic — the same image runs in dev and prod by swapping the ConfigMap.\n\n**Common Pitfalls:** ConfigMap must exist before the Pod starts, or the pod will fail with `CreateContainerConfigError`. Env vars from ConfigMaps are NOT updated in running pods — restart the pod to pick up ConfigMap changes.",
+  "steps": [
+    "Define a ConfigMap named 'db-config' with keys DB_HOST and APP_ENV",
+    "Define a Pod named 'webapp' using image nginx:alpine",
+    "Add envFrom.configMapRef in the container spec pointing to 'db-config'",
+    "Apply the manifest with kubectl apply -f",
+    "Verify env vars with: kubectl exec webapp -- env | grep -E 'DB_HOST|APP_ENV'"
+  ],
+  "hints": [
+    "ConfigMap and Pod can be in the same YAML file separated by ---",
+    "envFrom is a list under the container spec, not under spec directly",
+    "configMapRef takes a name field matching your ConfigMap's metadata.name",
+    "kubectl exec <pod> -- env lists all environment variables in the container",
+    "Set DB_HOST to 'postgres.default.svc' and APP_ENV to 'production' in the ConfigMap data"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: db-config\ndata:\n  DB_HOST: # TODO: use 'postgres.default.svc'\n  APP_ENV: # TODO: use 'production'\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: webapp\nspec:\n  containers:\n  - name: webapp\n    image: nginx:alpine\n    envFrom: # TODO: Add configMapRef pointing to 'db-config'\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: db-config\ndata:\n  DB_HOST: \"postgres.default.svc\"\n  APP_ENV: \"production\"\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: webapp\nspec:\n  containers:\n  - name: webapp\n    image: nginx:alpine\n    envFrom:\n    - configMapRef:\n        name: db-config\n",
+    "validation_script": "#!/bin/bash\nset -e\n\necho 'Checking ConfigMap db-config exists...'\nif ! kubectl get configmap db-config &>/dev/null; then\n  echo '✗ ConfigMap db-config not found'\n  exit 1\nfi\necho '✓ ConfigMap db-config exists'\n\necho 'Checking DB_HOST value...'\nDB_HOST=$(kubectl get configmap db-config -o jsonpath='{.data.DB_HOST}')\nif [ \"$DB_HOST\" != \"postgres.default.svc\" ]; then\n  echo \"✗ DB_HOST expected 'postgres.default.svc', got '$DB_HOST'\"\n  exit 1\nfi\necho '✓ DB_HOST is correct'\n\necho 'Checking APP_ENV value...'\nAPP_ENV=$(kubectl get configmap db-config -o jsonpath='{.data.APP_ENV}')\nif [ \"$APP_ENV\" != \"production\" ]; then\n  echo \"✗ APP_ENV expected 'production', got '$APP_ENV'\"\n  exit 1\nfi\necho '✓ APP_ENV is correct'\n\necho 'Waiting for Pod webapp to be Running...'\nkubectl wait pod webapp --for=condition=Ready --timeout=60s\necho '✓ Pod webapp is Running'\n\necho 'Verifying env vars inside pod...'\nENV_CHECK=$(kubectl exec webapp -- env 2>/dev/null)\nif ! echo \"$ENV_CHECK\" | grep -q 'DB_HOST=postgres.default.svc'; then\n  echo '✗ DB_HOST not found in pod environment'\n  exit 1\nfi\necho '✓ DB_HOST visible inside pod'\n\nif ! echo \"$ENV_CHECK\" | grep -q 'APP_ENV=production'; then\n  echo '✗ APP_ENV not found in pod environment'\n  exit 1\nfi\necho '✓ APP_ENV visible inside pod'\n\necho ''\necho 'All checks passed!'\nexit 0\n"
+  }
+}

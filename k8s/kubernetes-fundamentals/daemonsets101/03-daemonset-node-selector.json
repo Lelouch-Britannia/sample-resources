@@ -1,0 +1,31 @@
+{
+  "slug": "kubernetes-daemonset-node-selector",
+  "title": "DaemonSet with Node Selector",
+  "order_index": 3,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Restrict a DaemonSet to nodes labeled `role=worker` and observe it automatically scheduling Pods as node labels change.\n\n**Focus**: Using `nodeSelector` to target a subset of nodes, showing that label changes on nodes — not DaemonSet edits — control Pod placement.\n\n## Common Pitfalls\n- If no nodes match the `nodeSelector`, the DaemonSet creates 0 pods silently — always verify with `kubectl get ds`.\n- After labeling a node, the new Pod appears within seconds without restarting the DaemonSet.\n- Removing the label from a node immediately terminates its DaemonSet Pod.",
+  "steps": [
+    "Label your worker node(s) with role=worker: kubectl label node <node-name> role=worker",
+    "Create a DaemonSet named 'worker-agent' using busybox:1.36 with nodeSelector role=worker",
+    "Verify pods are running only on labeled nodes: kubectl get pods -l app=worker-agent -o wide",
+    "Check that the control-plane node (if present) has no worker-agent pod",
+    "Label an additional node with role=worker (or verify the DaemonSet DESIRED count matches labeled node count)",
+    "Run kubectl get ds worker-agent to confirm DESIRED matches number of role=worker nodes"
+  ],
+  "hints": [
+    "kubectl get nodes --show-labels helps you see current node labels",
+    "kubectl label node <name> role=worker adds the label to a specific node",
+    "nodeSelector sits inside spec.template.spec, not at the DaemonSet spec level",
+    "If DESIRED is 0, no nodes match your nodeSelector — check labels with kubectl get nodes --show-labels",
+    "kubectl get pods -o wide shows the NODE column to confirm placement"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: worker-agent\n  labels:\n    app: worker-agent\nspec:\n  selector:\n    matchLabels:\n      app: worker-agent\n  template:\n    metadata:\n      labels:\n        app: worker-agent\n    spec:\n      nodeSelector:\n        # TODO: Only schedule on nodes labeled role=worker\n      containers:\n      - name: agent\n        image: busybox:1.36\n        command: ['sh', '-c', 'while true; do echo \"Worker agent running\"; sleep 60; done']\n        resources:\n          requests:\n            cpu: \"10m\"\n            memory: \"16Mi\"\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: worker-agent\n  labels:\n    app: worker-agent\nspec:\n  selector:\n    matchLabels:\n      app: worker-agent\n  template:\n    metadata:\n      labels:\n        app: worker-agent\n    spec:\n      nodeSelector:\n        role: worker\n      containers:\n      - name: agent\n        image: busybox:1.36\n        command: ['sh', '-c', 'while true; do echo \"Worker agent running\"; sleep 60; done']\n        resources:\n          requests:\n            cpu: \"10m\"\n            memory: \"16Mi\"\n",
+    "validation_script": "#!/bin/bash\nset -e\n\n# Label a worker node before applying\nWORKER=$(kubectl get nodes --no-headers | grep -v control-plane | head -1 | awk '{print $1}')\nif [ -z \"$WORKER\" ]; then\n  # Single-node cluster — label the only node\n  WORKER=$(kubectl get nodes --no-headers | head -1 | awk '{print $1}')\nfi\nkubectl label node \"$WORKER\" role=worker --overwrite\necho \"✓ Labeled node $WORKER with role=worker\"\n\nkubectl apply -f solution.yaml\n\n# Wait for DaemonSet\necho \"Waiting for DaemonSet worker-agent...\"\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  desired=$(kubectl get ds worker-agent -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo \"0\")\n  ready=$(kubectl get ds worker-agent -o jsonpath='{.status.numberReady}' 2>/dev/null || echo \"0\")\n  if [ \"$desired\" -gt 0 ] && [ \"$ready\" = \"$desired\" ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\n# Verify nodeSelector is set correctly\nns_role=$(kubectl get ds worker-agent -o jsonpath='{.spec.template.spec.nodeSelector.role}' 2>/dev/null || echo \"\")\nif [ \"$ns_role\" = \"worker\" ]; then\n  echo \"✓ nodeSelector role=worker is configured\"\nelse\n  echo \"✗ nodeSelector role is '$ns_role', expected 'worker'\"\n  exit 1\nfi\n\n# Verify pods are only on labeled nodes\npods=$(kubectl get pods -l app=worker-agent -o wide --no-headers 2>/dev/null || echo \"\")\nif [ -z \"$pods\" ]; then\n  echo \"✗ No worker-agent pods found\"\n  exit 1\nfi\n\nwhile IFS= read -r line; do\n  pod_node=$(echo \"$line\" | awk '{print $7}')\n  node_label=$(kubectl get node \"$pod_node\" --show-labels 2>/dev/null | grep -c 'role=worker' || true)\n  if [ \"$node_label\" -gt 0 ]; then\n    echo \"✓ Pod on node $pod_node (has role=worker label)\"\n  else\n    echo \"✗ Pod found on node $pod_node which lacks role=worker label\"\n    exit 1\n  fi\ndone <<< \"$pods\"\n\ndesired=$(kubectl get ds worker-agent -o jsonpath='{.status.desiredNumberScheduled}')\nready=$(kubectl get ds worker-agent -o jsonpath='{.status.numberReady}')\necho \"✓ DaemonSet worker-agent: $ready/$desired ready\"\n\necho \"✓ All validations passed\"\nexit 0\n"
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "slug": "kubernetes-affinity-taints-tolerations",
+  "title": "Affinity, Taints and Tolerations",
+  "order_index": 2,
+  "type": "conceptual",
+  "difficulty": "intermediate",
+  "description": "## Node Affinity\n\nNode affinity extends `nodeSelector` with richer expressions. There are two rule types:\n\n**`requiredDuringSchedulingIgnoredDuringExecution`** — hard rule. Pod will NOT schedule if no node matches.\n\n**`preferredDuringSchedulingIgnoredDuringExecution`** — soft rule. Scheduler tries to honor it but schedules elsewhere if no match.\n\n```yaml\naffinity:\n  nodeAffinity:\n    requiredDuringSchedulingIgnoredDuringExecution:\n      nodeSelectorTerms:\n      - matchExpressions:\n        - key: zone\n          operator: In\n          values: [us-east-1a, us-east-1b]\n    preferredDuringSchedulingIgnoredDuringExecution:\n    - weight: 50\n      preference:\n        matchExpressions:\n        - key: disktype\n          operator: In\n          values: [ssd]\n```\n\n`IgnoredDuringExecution` means: once a pod is running, node label changes do NOT evict it.\n\n## Pod Affinity and Anti-Affinity\n\n**podAffinity** co-locates pods with others matching a label selector:\n```yaml\naffinity:\n  podAntiAffinity:\n    requiredDuringSchedulingIgnoredDuringExecution:\n    - labelSelector:\n        matchLabels:\n          app: myapp\n      topologyKey: kubernetes.io/hostname\n```\n`topologyKey` defines the scope — `kubernetes.io/hostname` means \"one per node\"; `topology.kubernetes.io/zone` means \"spread across zones\".\n\n## Taints and Tolerations\n\n**Taints** are applied to nodes to repel pods. Three effects:\n- **NoSchedule** — new pods without a toleration will not be scheduled\n- **PreferNoSchedule** — scheduler tries to avoid the node, but may still use it\n- **NoExecute** — evicts existing pods that don't tolerate the taint\n\n```bash\nkubectl taint node worker-1 dedicated=gpu:NoSchedule\n```\n\n**Tolerations** allow a pod to be scheduled onto a tainted node:\n```yaml\nspec:\n  tolerations:\n  - key: \"dedicated\"\n    operator: \"Equal\"\n    value: \"gpu\"\n    effect: \"NoSchedule\"\n```\n\n## Real Use Cases\n\n- **Dedicated GPU nodes**: taint with `gpu=true:NoSchedule`; only ML pods tolerate it\n- **Spread replicas across zones**: use `podAntiAffinity` with zone topology key\n- **Isolate noisy tenants**: taint tenant-specific nodes; only that tenant's pods have toleration\n\n## Common Pitfalls\n\n**Forgetting IgnoredDuringExecution** — changing node labels after pods are running will NOT evict them. Affinity is only evaluated at scheduling time.\n\n**Hard affinity causing Pending** — a `required` rule with no matching nodes leaves pods stuck. Use `preferred` unless strict placement is truly necessary.\n\n**Taint vs label confusion** — taints repel pods; labels attract them via affinity/nodeSelector. A pod can have affinity for a label AND a toleration for a taint on the same node.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "What is the difference between requiredDuring and preferredDuring node affinity rules?",
+      "options": [
+        {"id": "a", "text": "required is evaluated at runtime; preferred is evaluated at scheduling"},
+        {"id": "b", "text": "required is a hard constraint (pod won't schedule if unmet); preferred is a soft hint (scheduler tries to honor it)"},
+        {"id": "c", "text": "required uses label selectors; preferred uses taints"},
+        {"id": "d", "text": "They are the same — 'required' is just an alias for 'preferred' with weight 100"}
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "A node gets its label removed after a pod with required nodeAffinity is already running on it. What happens?",
+      "options": [
+        {"id": "a", "text": "The pod is immediately evicted from the node"},
+        {"id": "b", "text": "Nothing — IgnoredDuringExecution means running pods are not affected by node label changes"},
+        {"id": "c", "text": "The pod enters a Failed state"},
+        {"id": "d", "text": "The scheduler migrates the pod to a matching node"}
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "You want to ensure no two replicas of your app land on the same node. Which configuration achieves this?",
+      "options": [
+        {"id": "a", "text": "nodeAffinity with requiredDuringScheduling and matchExpressions on the node name"},
+        {"id": "b", "text": "podAntiAffinity with requiredDuringScheduling and topologyKey: kubernetes.io/hostname"},
+        {"id": "c", "text": "Taint each node with app=myapp:NoSchedule"},
+        {"id": "d", "text": "Set spec.nodeName to different nodes in each pod template"}
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "What taint effect evicts already-running pods that don't have a matching toleration?",
+      "options": [
+        {"id": "a", "text": "NoSchedule"},
+        {"id": "b", "text": "PreferNoSchedule"},
+        {"id": "c", "text": "NoExecute"},
+        {"id": "d", "text": "Evict"}
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "A pod has a toleration for taint key=gpu:NoSchedule. Does this guarantee the pod will schedule on the GPU node?",
+      "options": [
+        {"id": "a", "text": "Yes — tolerations force the scheduler to prefer the tainted node"},
+        {"id": "b", "text": "No — tolerations allow pods to be scheduled on tainted nodes, but don't attract them. You also need nodeAffinity or nodeSelector to target that node."},
+        {"id": "c", "text": "Yes — if a node has a matching taint, the scheduler automatically prefers it"},
+        {"id": "d", "text": "No — tolerations are only for NoExecute taints"}
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "b",
+      "q2": "b",
+      "q3": "b",
+      "q4": "c",
+      "q5": "b"
+    },
+    "quiz_explanations": {
+      "q1": "requiredDuringSchedulingIgnoredDuringExecution is a hard constraint — the pod is only scheduled on nodes that satisfy the rule. preferredDuringSchedulingIgnoredDuringExecution is a soft hint — the scheduler tries to honor it but will schedule on a non-matching node if no matching node is available.",
+      "q2": "The 'IgnoredDuringExecution' part of the rule name tells you exactly what happens: changes during execution (while the pod is running) are ignored. The pod continues running on the node even after the node's labels change. This is why careful use of required affinity is important.",
+      "q3": "podAntiAffinity with requiredDuringSchedulingIgnoredDuringExecution and topologyKey: kubernetes.io/hostname ensures the scheduler will not place two pods with the same label selector on the same node. The topologyKey scopes the anti-affinity to individual hostnames.",
+      "q4": "NoExecute is the most aggressive taint effect. It not only prevents new pods from scheduling on the node but also evicts any currently running pods that do not have a matching toleration. NoSchedule only affects new scheduling decisions.",
+      "q5": "Tolerations are permissive — they allow a pod to be scheduled on a tainted node, but they don't cause the scheduler to prefer that node. To guarantee placement on the GPU node, you need to combine the toleration with a nodeAffinity or nodeSelector that matches a label on the GPU node."
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "slug": "kubernetes-service-headless-dns",
+  "title": "Headless Service for Direct Pod Access",
+  "order_index": 7,
+  "type": "coding",
+  "difficulty": "advanced",
+  "description": "Create a headless Service (clusterIP: None) backed by 3 replicas. Use a busybox Pod to run nslookup and see DNS return multiple A records — one per Pod — instead of a single VIP.\n\n**Why this matters**: Headless Services underpin StatefulSets and client-side load balancing. The DNS difference between ClusterIP and headless is key to running databases or message brokers on Kubernetes.\n\n**Common Pitfalls**: nslookup may return fewer IPs if Pods are still starting. A headless Service with no matching selector returns zero DNS records.",
+  "steps": [
+    "Set clusterIP: None in the Service to make it headless",
+    "Create a Deployment with 3 replicas labeled app=store so the headless Service selects them",
+    "Deploy a busybox Pod for DNS debugging",
+    "Apply with kubectl apply -f solution.yaml",
+    "Wait for all 3 replicas: kubectl rollout status deployment/store",
+    "Run nslookup inside busybox: kubectl exec busybox-dns -- nslookup store-headless",
+    "Observe multiple A records returned — one per Pod IP"
+  ],
+  "hints": [
+    "Set spec.clusterIP: None to create a headless Service — this prevents VIP allocation",
+    "The headless Service selector must match the Deployment Pod template labels",
+    "Use image busybox:1.36 for the DNS debug pod with command ['sleep', '3600']",
+    "nslookup should return 3 Address lines when all 3 replicas are ready",
+    "If nslookup returns only 1-2 addresses, some Pods may still be in ContainerCreating"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# --- Headless Service (no ClusterIP) ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: store-headless\nspec:\n  clusterIP: # TODO: what value makes a Service headless?\n  selector:\n    app: store\n  ports:\n  - port: 80\n    targetPort: 80\n---\n# --- Deployment with 3 replicas ---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: store\nspec:\n  replicas: # TODO: how many replicas to demonstrate multiple DNS A records?\n  selector:\n    matchLabels:\n      app: store\n  template:\n    metadata:\n      labels:\n        app: store\n    spec:\n      containers:\n      - name: store\n        image: nginx:alpine\n        ports:\n        - containerPort: 80\n---\n# --- DNS debug Pod ---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: busybox-dns\nspec:\n  containers:\n  - name: busybox\n    image: busybox:1.36\n    command: # TODO: keep the pod alive so you can exec into it\n"
+  },
+  "_solution": {
+    "code_solution": "# --- Headless Service (no ClusterIP) ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: store-headless\nspec:\n  clusterIP: None\n  selector:\n    app: store\n  ports:\n  - port: 80\n    targetPort: 80\n---\n# --- Deployment with 3 replicas ---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: store\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: store\n  template:\n    metadata:\n      labels:\n        app: store\n    spec:\n      containers:\n      - name: store\n        image: nginx:alpine\n        ports:\n        - containerPort: 80\n---\n# --- DNS debug Pod ---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: busybox-dns\nspec:\n  containers:\n  - name: busybox\n    image: busybox:1.36\n    command: [\"sleep\", \"3600\"]\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\necho \"Waiting for store Deployment (3 replicas) to be ready...\"\nkubectl rollout status deployment/store --timeout=120s\nif [ $? -ne 0 ]; then\n  echo \"✗ store Deployment did not become ready\"\n  exit 1\nfi\necho \"✓ store Deployment is ready\"\n\nCLUSTER_IP=$(kubectl get svc store-headless -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo \"\")\nif [ \"$CLUSTER_IP\" != \"None\" ]; then\n  echo \"✗ Service store-headless has clusterIP='$CLUSTER_IP', expected 'None' (headless)\"\n  exit 1\nfi\necho \"✓ Service store-headless is headless (clusterIP: None)\"\n\nEXPECTED_REPLICAS=3\nREADY_REPLICAS=$(kubectl get deployment store -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo \"0\")\nif [ \"$READY_REPLICAS\" != \"$EXPECTED_REPLICAS\" ]; then\n  echo \"✗ Expected $EXPECTED_REPLICAS ready replicas, got $READY_REPLICAS\"\n  exit 1\nfi\necho \"✓ Deployment has $READY_REPLICAS ready replicas\"\n\nENDPOINT_COUNT=$(kubectl get endpoints store-headless -o jsonpath='{.subsets[0].addresses}' 2>/dev/null | python3 -c \"import sys,json; data=sys.stdin.read(); addrs=json.loads(data) if data.strip() and data.strip()!='null' else []; print(len(addrs))\" 2>/dev/null || echo \"0\")\nif [ \"$ENDPOINT_COUNT\" -lt 3 ]; then\n  echo \"✗ Expected at least 3 endpoints, got $ENDPOINT_COUNT\"\n  kubectl get endpoints store-headless\n  exit 1\nfi\necho \"✓ Headless Service has $ENDPOINT_COUNT endpoints (one per Pod)\"\n\necho \"Waiting for busybox-dns Pod...\"\ntimeout=60\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  phase=$(kubectl get pod busybox-dns -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Pending\")\n  if [ \"$phase\" = \"Running\" ]; then break; fi\n  sleep 3\n  ((elapsed+=3))\ndone\nif [ \"$phase\" != \"Running\" ]; then\n  echo \"✗ busybox-dns Pod did not reach Running state\"\n  exit 1\nfi\necho \"✓ busybox-dns Pod is running\"\n\nDNS_OUTPUT=$(kubectl exec busybox-dns -- nslookup store-headless 2>/dev/null || echo \"\")\nADDRESS_COUNT=$(echo \"$DNS_OUTPUT\" | grep -c \"^Address:\" || true)\n\nif [ \"$ADDRESS_COUNT\" -ge 3 ]; then\n  echo \"✓ DNS returned $ADDRESS_COUNT A records for store-headless (one per Pod)\"\n  echo \"✓ Headless Service validation passed\"\n  exit 0\nelif [ \"$ADDRESS_COUNT\" -ge 1 ]; then\n  echo \"✓ DNS returned $ADDRESS_COUNT A record(s) — some Pods may still be initializing\"\n  echo \"✓ Headless Service DNS is working (returning Pod IPs, not a VIP)\"\n  exit 0\nelse\n  echo \"✗ nslookup returned no addresses for store-headless\"\n  echo \"DNS output:\"\n  echo \"$DNS_OUTPUT\"\n  exit 1\nfi\n"
+  }
+}

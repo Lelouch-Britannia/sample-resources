@@ -1,0 +1,31 @@
+{
+  "slug": "kubernetes-statefulset-scale-ordering",
+  "title": "Scale StatefulSet and Observe Ordering",
+  "order_index": 5,
+  "type": "coding",
+  "difficulty": "advanced",
+  "description": "Scale a StatefulSet up and down to observe strict ordered Pod creation and deletion — a key behavioral difference from Deployments.\n\n**Focus**: Internalizing why ordered scaling matters for stateful workloads, and understanding PVC retention on scale-down.\n\n## Common Pitfalls\n- Deployments scale in parallel; StatefulSets do not — each Pod waits for the previous to be Ready.\n- PVCs for removed Pods are NOT deleted on scale-down — they persist and consume storage.\n- A stuck `Pending` Pod blocks the whole scale-up; check events with `kubectl describe pod`.",
+  "steps": [
+    "Deploy a StatefulSet named 'web' with 1 replica using nginx:1.25 and a headless Service",
+    "Scale to 3 replicas: kubectl scale statefulset web --replicas=3",
+    "Watch pod creation order using: kubectl get pods -l app=nginx -w — confirm web-1 starts only after web-0 is Running",
+    "Scale down to 1 replica: kubectl scale statefulset web --replicas=1",
+    "Watch pod deletion order using kubectl get pods -l app=nginx -w — confirm web-2 is deleted before web-1",
+    "After scale-down, list PVCs with kubectl get pvc — confirm data-web-1 and data-web-2 still exist"
+  ],
+  "hints": [
+    "Use 'kubectl get pods -w' in a separate terminal to watch real-time pod events",
+    "kubectl get events --sort-by=.lastTimestamp shows what the StatefulSet controller is doing",
+    "After scale-down, 'kubectl get pvc' will still show data-web-1 and data-web-2 — this is expected",
+    "kubectl scale statefulset web --replicas=3 is equivalent to editing spec.replicas in the manifest",
+    "If a pod is stuck Pending, run 'kubectl describe pod web-1' to see if PVC binding is the issue"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# Headless Service\napiVersion: v1\nkind: Service\nmetadata:\n  name: nginx\nspec:\n  clusterIP: None\n  selector:\n    app: nginx\n  ports:\n  - port: 80\n---\n# StatefulSet — start with 1 replica; you will scale it in the steps\napiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: web\nspec:\n  serviceName: \"nginx\"\n  replicas: # TODO: Start with 1 replica\n  selector:\n    matchLabels:\n      app: nginx\n  template:\n    metadata:\n      labels:\n        app: nginx\n    spec:\n      containers:\n      - name: nginx\n        image: # TODO: Use nginx:1.25\n        ports:\n        - containerPort: 80\n  volumeClaimTemplates:\n  - metadata:\n      name: data\n    spec:\n      accessModes: [\"ReadWriteOnce\"]\n      resources:\n        requests:\n          storage: 50Mi\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: Service\nmetadata:\n  name: nginx\nspec:\n  clusterIP: None\n  selector:\n    app: nginx\n  ports:\n  - port: 80\n---\napiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: web\nspec:\n  serviceName: \"nginx\"\n  replicas: 1\n  selector:\n    matchLabels:\n      app: nginx\n  template:\n    metadata:\n      labels:\n        app: nginx\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.25\n        ports:\n        - containerPort: 80\n  volumeClaimTemplates:\n  - metadata:\n      name: data\n    spec:\n      accessModes: [\"ReadWriteOnce\"]\n      resources:\n        requests:\n          storage: 50Mi\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\n# Wait for initial single pod\necho \"Waiting for web-0...\"\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  phase=$(kubectl get pod web-0 -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Pending\")\n  if [ \"$phase\" = \"Running\" ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\nphase=$(kubectl get pod web-0 -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Missing\")\nif [ \"$phase\" != \"Running\" ]; then\n  echo \"✗ web-0 is not Running\"\n  exit 1\nfi\necho \"✓ Initial pod web-0 is Running\"\n\n# Scale up to 3\nkubectl scale statefulset web --replicas=3\necho \"Scaled to 3 replicas, waiting for web-1 and web-2...\"\ntimeout=120\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get pods -l app=nginx --no-headers 2>/dev/null | grep -c Running || true)\n  if [ \"$ready\" -ge 3 ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\nfor pod in web-0 web-1 web-2; do\n  phase=$(kubectl get pod $pod -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Missing\")\n  if [ \"$phase\" = \"Running\" ]; then\n    echo \"✓ Pod $pod is Running after scale-up\"\n  else\n    echo \"✗ Pod $pod not Running after scale-up (phase: $phase)\"\n    exit 1\n  fi\ndone\n\n# Scale down to 1\nkubectl scale statefulset web --replicas=1\necho \"Scaled down to 1, waiting for web-2 and web-1 to be removed...\"\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  count=$(kubectl get pods -l app=nginx --no-headers 2>/dev/null | wc -l)\n  if [ \"$count\" -le 1 ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\ncount=$(kubectl get pods -l app=nginx --no-headers 2>/dev/null | wc -l)\nif [ \"$count\" -le 1 ]; then\n  echo \"✓ Scaled down to 1 pod\"\nelse\n  echo \"✗ Still $count pods running after scale-down\"\n  exit 1\nfi\n\n# Verify PVCs from removed pods still exist\nfor pvc in data-web-1 data-web-2; do\n  status=$(kubectl get pvc $pvc --no-headers 2>/dev/null | awk '{print $2}' || echo \"Missing\")\n  if [ \"$status\" != \"Missing\" ] && [ -n \"$status\" ]; then\n    echo \"✓ PVC $pvc persists after scale-down (status: $status)\"\n  else\n    echo \"✗ PVC $pvc missing — was it accidentally deleted?\"\n    exit 1\n  fi\ndone\n\necho \"✓ All validations passed\"\nexit 0\n"
+  }
+}

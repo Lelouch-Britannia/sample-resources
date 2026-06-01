@@ -1,0 +1,112 @@
+{
+  "slug": "kubernetes-daemonset-fundamentals",
+  "title": "DaemonSets: One Pod Per Node",
+  "order_index": 1,
+  "type": "conceptual",
+  "difficulty": "intermediate",
+  "description": "Learn what DaemonSets are, why the cluster runs exactly one DaemonSet Pod per node, and how tolerations and node selectors let you target specific nodes.\n\n## Overview\nA DaemonSet ensures that a copy of a Pod runs on **every node** in the cluster (or a subset of nodes). It is not about how many replicas you need — it is about guaranteeing infrastructure-level coverage. When a new node joins the cluster, the DaemonSet controller automatically schedules a Pod on it. When a node is removed, its Pod is garbage collected.\n\nDaemonSets are the standard way to deploy **node-level agents**: log collectors (Fluentd, Filebeat), metrics exporters (node-exporter), CNI plugins (Calico, Cilium), storage daemons (Ceph), and security agents.\n\n## Key Concepts\n\n### No Replica Count\nUnlike Deployments, a DaemonSet has no `replicas` field. The number of Pods equals the number of eligible nodes. You control coverage by changing which nodes are eligible.\n\n```yaml\napiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: node-exporter\nspec:\n  selector:\n    matchLabels:\n      app: node-exporter\n  template:\n    metadata:\n      labels:\n        app: node-exporter\n    spec:\n      containers:\n      - name: node-exporter\n        image: prom/node-exporter:v1.7.0\n        ports:\n        - containerPort: 9100\n```\n\n### nodeSelector and Node Affinity\nTo restrict a DaemonSet to a subset of nodes, use `nodeSelector` or `nodeAffinity`:\n\n```yaml\nspec:\n  template:\n    spec:\n      nodeSelector:\n        role: worker    # Only run on nodes labeled role=worker\n```\n\nThis is useful for hardware-specific agents — GPU drivers only on GPU nodes, high-performance storage agents only on SSD nodes.\n\n### Tolerations for Control-Plane Nodes\nBy default, control-plane nodes have a taint (`node-role.kubernetes.io/control-plane:NoSchedule`) that prevents regular Pods from being scheduled on them. If your DaemonSet agent needs to run on control-plane nodes too (e.g., a cluster-wide log collector), add a toleration:\n\n```yaml\nspec:\n  template:\n    spec:\n      tolerations:\n      - key: node-role.kubernetes.io/control-plane\n        operator: Exists\n        effect: NoSchedule\n```\n\nWithout this toleration, your DaemonSet silently skips the control-plane — a common source of gaps in coverage.\n\n### Update Strategy\n- `RollingUpdate` (default): Updates one node at a time. `maxUnavailable: 1` means at most one node lacks the agent during rollout.\n- `OnDelete`: Pods only update when manually deleted. Use when you need to drain a node before replacing the agent.\n\n## DaemonSet vs Deployment\n\n| Property | DaemonSet | Deployment |\n|----------|-----------|------------|\n| Replica control | One per eligible node | Fixed count |\n| Use case | Infrastructure agents | User-facing workloads |\n| Scaling | Add/remove nodes | `kubectl scale` |\n| Node addition | Auto-schedules new pod | No change |\n\n## When to Use DaemonSets\n- Log collectors that must read from every node's filesystem\n- Metrics exporters that expose per-node hardware stats\n- Network plugins that configure node-level iptables rules\n- Storage daemons managing local disks on each node\n\n## When NOT to Use DaemonSets\n- User-facing workloads (APIs, web servers) — use Deployments\n- When you need multiple Pods per node for throughput — use Deployments with `topologySpreadConstraints`\n- When Pod count should be independent of node count\n\n## Common Pitfalls\n- **Missing control-plane toleration**: If your monitoring agent skips the control-plane node, cluster health gaps go unnoticed. Always add the toleration for infrastructure-critical agents.\n- **No resource requests**: DaemonSet Pods compete with workloads on every node. Omitting `resources.requests` makes them best-effort and liable to be evicted under pressure.\n- **Brief coverage gaps during rollout**: `RollingUpdate` with `maxUnavailable: 1` means one node at a time is unmonitored. For critical security agents, consider `maxUnavailable: 0` (requires `maxSurge`).",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "How many Pods does a DaemonSet create in a cluster with 5 worker nodes and 1 control-plane node (no tolerations)?",
+      "options": [
+        {
+          "id": "a",
+          "text": "1 — DaemonSets run a single instance"
+        },
+        {
+          "id": "b",
+          "text": "6 — one per every node including control-plane"
+        },
+        {
+          "id": "c",
+          "text": "5 — one per worker node (control-plane has a NoSchedule taint that blocks DaemonSets by default)"
+        },
+        {
+          "id": "d",
+          "text": "Depends on the replicas field"
+        }
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What happens to DaemonSet Pods when a new node joins the cluster?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Nothing — you must manually create a Pod on the new node"
+        },
+        {
+          "id": "b",
+          "text": "The DaemonSet controller automatically schedules a Pod on the new node"
+        },
+        {
+          "id": "c",
+          "text": "The existing DaemonSet Pods are rescheduled to balance across all nodes"
+        },
+        {
+          "id": "d",
+          "text": "The DaemonSet must be deleted and recreated to pick up the new node"
+        }
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "You have a log collector DaemonSet but it isn't running on your control-plane node. What is the most likely cause?",
+      "options": [
+        {
+          "id": "a",
+          "text": "DaemonSets cannot run on control-plane nodes"
+        },
+        {
+          "id": "b",
+          "text": "The control-plane node has a NoSchedule taint and the DaemonSet is missing a matching toleration"
+        },
+        {
+          "id": "c",
+          "text": "The DaemonSet spec is missing a nodeSelector"
+        },
+        {
+          "id": "d",
+          "text": "Control-plane nodes do not have enough CPU to run agent Pods"
+        }
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "Which update strategy requires you to manually delete DaemonSet Pods to trigger an update?",
+      "options": [
+        {
+          "id": "a",
+          "text": "RollingUpdate"
+        },
+        {
+          "id": "b",
+          "text": "Recreate"
+        },
+        {
+          "id": "c",
+          "text": "OnDelete"
+        },
+        {
+          "id": "d",
+          "text": "Manual"
+        }
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "c",
+      "q2": "b",
+      "q3": "b",
+      "q4": "c"
+    },
+    "quiz_explanations": {
+      "q1": "Without tolerations, a DaemonSet skips nodes with the NoSchedule taint — which control-plane nodes have by default (node-role.kubernetes.io/control-plane:NoSchedule). So in a 6-node cluster with 1 control-plane and 5 workers, only 5 DaemonSet Pods are created. Add the matching toleration to also cover the control-plane.",
+      "q2": "The DaemonSet controller watches for new nodes and automatically creates a Pod on each newly added node that matches the DaemonSet's node selector and tolerations. This is the core value of DaemonSets for infrastructure agents — zero manual intervention when the cluster scales.",
+      "q3": "Control-plane nodes have a built-in taint (node-role.kubernetes.io/control-plane:NoSchedule) to keep user workloads off them. A DaemonSet must explicitly tolerate this taint to schedule on the control-plane. This is intentional — most DaemonSets don't need to run there, but infrastructure-critical agents like log collectors should.",
+      "q4": "OnDelete is an update strategy where the controller does not automatically replace Pods when the DaemonSet spec changes. Instead, you control the update by manually deleting individual Pods — only when a Pod is deleted does the controller create a replacement with the new spec. This gives maximum control over when each node's agent is updated."
+    }
+  }
+}

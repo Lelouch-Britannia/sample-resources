@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-configmap-hot-reload",
+  "title": "ConfigMap Hot Reload via Volume Mount",
+  "order_index": 5,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Deploy nginx with a custom config file served from a ConfigMap volume mount. Because it is volume-mounted (not env var), updating the ConfigMap automatically updates the file inside the running pod within ~60 seconds — no pod restart needed.\n\n**Common Pitfalls:** Only volume-mounted ConfigMaps hot-reload. Env var injections (envFrom/valueFrom) never update in a running pod. Also note: nginx itself must be signaled to reload its config — file update alone does not restart nginx's worker processes.",
+  "steps": [
+    "Create a ConfigMap 'nginx-custom-conf' with key 'default.conf' containing a simple nginx server block on port 8080",
+    "Create a Deployment 'nginx-hot' with 1 replica mounting the ConfigMap at /etc/nginx/conf.d/",
+    "Verify the pod is Running and the mounted file shows the correct port",
+    "Edit the ConfigMap to change the port to 9090",
+    "Wait ~60s and exec into the pod to verify the file now contains 9090"
+  ],
+  "hints": [
+    "The nginx.conf server block uses 'listen <port>;' to set the port",
+    "Use kubectl exec <pod> -- cat /etc/nginx/conf.d/default.conf to inspect the mounted file",
+    "kubectl edit configmap nginx-custom-conf lets you update the ConfigMap in-place",
+    "Volume-mounted ConfigMap files update automatically — the kubelet handles this",
+    "Mount the nginx-conf volume at '/etc/nginx/conf.d/' so nginx loads the custom server block"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: nginx-custom-conf\ndata:\n  default.conf: | # TODO: Add nginx server block listening on port 8080\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx-hot\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: nginx-hot\n  template:\n    metadata:\n      labels:\n        app: nginx-hot\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:alpine\n        volumeMounts:\n        - name: nginx-conf\n          mountPath: # TODO: use '/etc/nginx/conf.d/'\n      volumes:\n      - name: nginx-conf\n        configMap:\n          name: nginx-custom-conf\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: nginx-custom-conf\ndata:\n  default.conf: |\n    server {\n      listen 8080;\n      location / {\n        return 200 'hello from nginx-hot\\n';\n      }\n    }\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx-hot\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: nginx-hot\n  template:\n    metadata:\n      labels:\n        app: nginx-hot\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:alpine\n        volumeMounts:\n        - name: nginx-conf\n          mountPath: /etc/nginx/conf.d/\n      volumes:\n      - name: nginx-conf\n        configMap:\n          name: nginx-custom-conf\n",
+    "validation_script": "#!/bin/bash\nset -e\n\necho 'Checking ConfigMap nginx-custom-conf exists...'\nif ! kubectl get configmap nginx-custom-conf &>/dev/null; then\n  echo '✗ ConfigMap nginx-custom-conf not found'\n  exit 1\nfi\necho '✓ ConfigMap nginx-custom-conf exists'\n\necho 'Checking default.conf key contains listen directive...'\nCONF=$(kubectl get configmap nginx-custom-conf -o jsonpath='{.data.default\\.conf}')\nif ! echo \"$CONF\" | grep -q 'listen'; then\n  echo '✗ default.conf missing listen directive'\n  exit 1\nfi\necho '✓ default.conf has listen directive'\n\necho 'Checking Deployment nginx-hot exists...'\nif ! kubectl get deployment nginx-hot &>/dev/null; then\n  echo '✗ Deployment nginx-hot not found'\n  exit 1\nfi\necho '✓ Deployment nginx-hot exists'\n\necho 'Waiting for Deployment to be available...'\nkubectl rollout status deployment/nginx-hot --timeout=90s\necho '✓ Deployment nginx-hot is available'\n\necho 'Verifying ConfigMap is volume-mounted at /etc/nginx/conf.d/...'\nPOD=$(kubectl get pod -l app=nginx-hot -o jsonpath='{.items[0].metadata.name}')\nif ! kubectl exec \"$POD\" -- ls /etc/nginx/conf.d/default.conf &>/dev/null; then\n  echo '✗ /etc/nginx/conf.d/default.conf not found in pod'\n  exit 1\nfi\necho '✓ default.conf mounted in pod'\n\necho ''\necho 'All checks passed!'\nexit 0\n"
+  }
+}

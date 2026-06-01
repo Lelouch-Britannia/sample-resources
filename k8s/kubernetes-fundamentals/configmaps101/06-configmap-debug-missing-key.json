@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-configmap-debug-missing-key",
+  "title": "Debug: Fix Missing ConfigMap Key",
+  "order_index": 6,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "A Deployment is stuck because it references a ConfigMap key that does not exist — a common real-world misconfiguration. The pod will show `CreateContainerConfigError`. Your job: apply the broken manifest, read the error, identify the wrong key name in `configMapKeyRef`, and fix it.\n\n**Common Pitfalls:** Key names in ConfigMaps are case-sensitive. `db_host` and `DB_HOST` are entirely different keys. Always match the key name in `configMapKeyRef.key` exactly to what is defined in the ConfigMap's `data` section.",
+  "steps": [
+    "Apply the manifest as-is and observe the pod status with kubectl get pods",
+    "Run kubectl describe pod on the failing pod to read the error event",
+    "Inspect the ConfigMap with kubectl get configmap app-settings -o yaml to see the actual keys",
+    "Identify the mismatch between the key name in configMapKeyRef and the ConfigMap's data keys",
+    "Fix the key name in the env.valueFrom.configMapKeyRef section and re-apply",
+    "Verify the pod reaches Running state"
+  ],
+  "hints": [
+    "kubectl describe pod will show an event like: 'couldn't find key X in ConfigMap'",
+    "Compare the key in configMapKeyRef.key against the actual keys in the ConfigMap's data section",
+    "ConfigMap key names are case-sensitive — even a capital letter difference causes failure",
+    "After fixing, kubectl apply -f and then kubectl rollout status deployment/broken-app"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-settings\ndata:\n  DATABASE_URL: \"postgres://db:5432/myapp\"\n  LOG_LEVEL: \"warn\"\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: broken-app\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: broken-app\n  template:\n    metadata:\n      labels:\n        app: broken-app\n    spec:\n      containers:\n      - name: app\n        image: busybox\n        command: ['sh', '-c', 'echo DB=$DATABASE_URL && sleep 3600']\n        env:\n        - name: DATABASE_URL\n          valueFrom:\n            configMapKeyRef:\n              name: app-settings\n              key: database_url  # TODO: This key name is wrong — fix it to match the ConfigMap\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-settings\ndata:\n  DATABASE_URL: \"postgres://db:5432/myapp\"\n  LOG_LEVEL: \"warn\"\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: broken-app\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: broken-app\n  template:\n    metadata:\n      labels:\n        app: broken-app\n    spec:\n      containers:\n      - name: app\n        image: busybox\n        command: ['sh', '-c', 'echo DB=$DATABASE_URL && sleep 3600']\n        env:\n        - name: DATABASE_URL\n          valueFrom:\n            configMapKeyRef:\n              name: app-settings\n              key: DATABASE_URL\n",
+    "validation_script": "#!/bin/bash\nset -e\n\necho 'Checking ConfigMap app-settings exists...'\nif ! kubectl get configmap app-settings &>/dev/null; then\n  echo '✗ ConfigMap app-settings not found'\n  exit 1\nfi\necho '✓ ConfigMap app-settings exists'\n\necho 'Checking DATABASE_URL key exists in ConfigMap...'\nDB_URL=$(kubectl get configmap app-settings -o jsonpath='{.data.DATABASE_URL}')\nif [ -z \"$DB_URL\" ]; then\n  echo '✗ DATABASE_URL key missing from ConfigMap app-settings'\n  exit 1\nfi\necho '✓ DATABASE_URL key present in ConfigMap'\n\necho 'Checking Deployment broken-app exists...'\nif ! kubectl get deployment broken-app &>/dev/null; then\n  echo '✗ Deployment broken-app not found'\n  exit 1\nfi\necho '✓ Deployment broken-app exists'\n\necho 'Waiting for Deployment to be available...'\nif ! kubectl rollout status deployment/broken-app --timeout=90s; then\n  echo '✗ Deployment broken-app did not become available — pod may have CreateContainerConfigError'\n  kubectl describe pod -l app=broken-app | tail -20\n  exit 1\nfi\necho '✓ Deployment broken-app is available'\n\necho 'Verifying env var DATABASE_URL is set correctly inside pod...'\nPOD=$(kubectl get pod -l app=broken-app -o jsonpath='{.items[0].metadata.name}')\nENV_VAL=$(kubectl exec \"$POD\" -- sh -c 'echo $DATABASE_URL' 2>/dev/null)\nif [ -z \"$ENV_VAL\" ]; then\n  echo '✗ DATABASE_URL env var is empty inside pod'\n  exit 1\nfi\necho \"✓ DATABASE_URL is set inside pod: $ENV_VAL\"\n\necho ''\necho 'All checks passed!'\nexit 0\n"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "slug": "kubernetes-statefulset-headless-deploy",
+  "title": "Deploy StatefulSet with Headless Service",
+  "order_index": 3,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Deploy a 3-replica nginx StatefulSet backed by a Headless Service and confirm that each Pod gets a stable, individually addressable DNS name.\n\n**Focus**: Understanding why `clusterIP: None` is essential — without it, individual Pod DNS entries are never created and peer discovery breaks.\n\n## Common Pitfalls\n- Omitting `clusterIP: None` silently creates a standard ClusterIP Service; Pod names won't resolve.\n- `serviceName` in the StatefulSet must exactly match the Service `metadata.name`.\n- Pods are created sequentially: `web-0` must be Running before `web-1` starts.",
+  "steps": [
+    "Create a Headless Service named 'nginx' with clusterIP: None selecting pods with label app: nginx",
+    "Create a StatefulSet named 'web' with serviceName: nginx and 3 replicas using image nginx:1.25",
+    "Verify all three pods are named web-0, web-1, and web-2 using kubectl get pods",
+    "Confirm pods were created in order by checking creation timestamps with kubectl get pods --sort-by=.metadata.creationTimestamp",
+    "Exec into web-0 and run 'nslookup web-1.nginx.default.svc.cluster.local' to verify per-pod DNS resolution"
+  ],
+  "hints": [
+    "A Headless Service requires spec.clusterIP: None — without it, individual Pod DNS entries are not created",
+    "The StatefulSet spec.serviceName must exactly match the Service metadata.name",
+    "Use 'nginx' as the app label value — set it identically on the pod template labels and Service selector",
+    "kubectl get pods -l app=nginx -w lets you watch pods appear one by one",
+    "nslookup or curl the pod hostname: web-0.nginx.default.svc.cluster.local",
+    "If nslookup is not available in the container, try: cat /etc/resolv.conf to see the search domain"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# Part 1: Headless Service\napiVersion: v1\nkind: Service\nmetadata:\n  name: nginx\nspec:\n  clusterIP: # TODO: What value makes a Service headless?\n  selector:\n    app: # TODO: use 'nginx'\n  ports:\n  - port: 80\n---\n# Part 2: StatefulSet\napiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: web\nspec:\n  serviceName: \"nginx\"\n  replicas: # TODO: How many replicas?\n  selector:\n    matchLabels:\n      app: # TODO: use 'nginx'\n  template:\n    metadata:\n      labels:\n        app: # TODO: use 'nginx'\n    spec:\n      containers:\n      - name: nginx\n        image: # TODO: nginx image (use nginx:1.25)\n        ports:\n        - containerPort: 80\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: Service\nmetadata:\n  name: nginx\nspec:\n  clusterIP: None\n  selector:\n    app: nginx\n  ports:\n  - port: 80\n---\napiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: web\nspec:\n  serviceName: \"nginx\"\n  replicas: 3\n  selector:\n    matchLabels:\n      app: nginx\n  template:\n    metadata:\n      labels:\n        app: nginx\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.25\n        ports:\n        - containerPort: 80\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\n# Wait for all 3 pods to be Running\necho \"Waiting for StatefulSet pods...\"\ntimeout=120\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get pods -l app=nginx --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)\n  if [ \"$ready\" -ge 3 ]; then\n    break\n  fi\n  sleep 5\n  ((elapsed+=5))\ndone\n\n# Verify pod names\nfor pod in web-0 web-1 web-2; do\n  phase=$(kubectl get pod $pod -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Missing\")\n  if [ \"$phase\" = \"Running\" ]; then\n    echo \"✓ Pod $pod is Running\"\n  else\n    echo \"✗ Pod $pod not found or not Running (phase: $phase)\"\n    exit 1\n  fi\ndone\n\n# Verify headless service\ncluster_ip=$(kubectl get svc nginx -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo \"missing\")\nif [ \"$cluster_ip\" = \"None\" ]; then\n  echo \"✓ Service nginx is headless (clusterIP: None)\"\nelse\n  echo \"✗ Service nginx is not headless (clusterIP: $cluster_ip)\"\n  exit 1\nfi\n\n# Verify serviceName linkage\nservice_name=$(kubectl get statefulset web -o jsonpath='{.spec.serviceName}' 2>/dev/null || echo \"\")\nif [ \"$service_name\" = \"nginx\" ]; then\n  echo \"✓ StatefulSet serviceName correctly set to 'nginx'\"\nelse\n  echo \"✗ StatefulSet serviceName is '$service_name', expected 'nginx'\"\n  exit 1\nfi\n\necho \"✓ All validations passed\"\nexit 0\n"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "slug": "kubernetes-daemonset-node-monitoring",
+  "title": "Deploy a Node Monitoring DaemonSet",
+  "order_index": 2,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Deploy a lightweight busybox monitoring agent as a DaemonSet and verify that exactly one Pod runs on every node.\n\n**Focus**: Understanding the DaemonSet's core guarantee — one Pod per eligible node — and the difference from a Deployment with matching replica count.\n\n## Common Pitfalls\n- A DaemonSet has no `replicas` field — including one will cause a validation error.\n- The Pod count will equal the number of schedulable nodes, not a fixed number you set.\n- If your cluster has a control-plane taint and you don't add a toleration, the control-plane node is skipped silently.",
+  "steps": [
+    "Create a DaemonSet named 'node-monitor' using image busybox:1.36 with command ['sh', '-c', 'while true; do echo \"Monitoring node: $NODE_NAME\"; sleep 30; done']",
+    "Add an env var NODE_NAME sourced from spec.nodeName using the downward API (fieldRef: spec.nodeName)",
+    "Apply the manifest and verify the DaemonSet is created: kubectl get daemonset node-monitor",
+    "Check the number of desired and ready pods matches the node count: kubectl get daemonset node-monitor",
+    "List pods with node placement: kubectl get pods -l app=node-monitor -o wide",
+    "Confirm each node has exactly one pod by checking the NODE column"
+  ],
+  "hints": [
+    "DaemonSets use apps/v1 apiVersion, same as Deployments",
+    "Do NOT add a replicas field — DaemonSets do not have one",
+    "To expose the node name inside the container, use env with valueFrom.fieldRef.fieldPath: spec.nodeName",
+    "kubectl get ds is shorthand for kubectl get daemonset",
+    "DESIRED in 'kubectl get ds' output shows how many nodes are eligible"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: node-monitor\n  labels:\n    app: node-monitor\nspec:\n  selector:\n    matchLabels:\n      app: node-monitor\n  template:\n    metadata:\n      labels:\n        app: node-monitor\n    spec:\n      containers:\n      - name: monitor\n        image: # TODO: Use busybox:1.36\n        command: # TODO: ['sh', '-c', 'while true; do echo \"Monitoring node: $NODE_NAME\"; sleep 30; done']\n        env:\n        - name: NODE_NAME\n          valueFrom:\n            fieldRef:\n              fieldPath: # TODO: Which field exposes the node name to the pod?\n        resources:\n          requests:\n            cpu: \"10m\"\n            memory: \"16Mi\"\n          limits:\n            cpu: \"50m\"\n            memory: \"32Mi\"\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: node-monitor\n  labels:\n    app: node-monitor\nspec:\n  selector:\n    matchLabels:\n      app: node-monitor\n  template:\n    metadata:\n      labels:\n        app: node-monitor\n    spec:\n      containers:\n      - name: monitor\n        image: busybox:1.36\n        command: ['sh', '-c', 'while true; do echo \"Monitoring node: $NODE_NAME\"; sleep 30; done']\n        env:\n        - name: NODE_NAME\n          valueFrom:\n            fieldRef:\n              fieldPath: spec.nodeName\n        resources:\n          requests:\n            cpu: \"10m\"\n            memory: \"16Mi\"\n          limits:\n            cpu: \"50m\"\n            memory: \"32Mi\"\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\n# Wait for DaemonSet to be ready\necho \"Waiting for DaemonSet node-monitor...\"\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  desired=$(kubectl get ds node-monitor -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo \"0\")\n  ready=$(kubectl get ds node-monitor -o jsonpath='{.status.numberReady}' 2>/dev/null || echo \"0\")\n  if [ \"$desired\" -gt 0 ] && [ \"$ready\" = \"$desired\" ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\n# Verify DaemonSet exists\ndesired=$(kubectl get ds node-monitor -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo \"0\")\nready=$(kubectl get ds node-monitor -o jsonpath='{.status.numberReady}' 2>/dev/null || echo \"0\")\nif [ \"$desired\" -gt 0 ] && [ \"$ready\" = \"$desired\" ]; then\n  echo \"✓ DaemonSet node-monitor: $ready/$desired pods ready\"\nelse\n  echo \"✗ DaemonSet not ready: $ready/$desired\"\n  kubectl describe ds node-monitor\n  exit 1\nfi\n\n# Verify image\nimage=$(kubectl get ds node-monitor -o jsonpath='{.spec.template.spec.containers[0].image}')\nif echo \"$image\" | grep -q \"busybox\"; then\n  echo \"✓ Using busybox image: $image\"\nelse\n  echo \"✗ Unexpected image: $image\"\n  exit 1\nfi\n\n# Verify NODE_NAME env var is configured via downward API\nfieldpath=$(kubectl get ds node-monitor -o jsonpath='{.spec.template.spec.containers[0].env[0].valueFrom.fieldRef.fieldPath}' 2>/dev/null || echo \"\")\nif [ \"$fieldpath\" = \"spec.nodeName\" ]; then\n  echo \"✓ NODE_NAME env var uses downward API (spec.nodeName)\"\nelse\n  echo \"✗ NODE_NAME fieldPath is '$fieldpath', expected spec.nodeName\"\n  exit 1\nfi\n\n# Verify each node has exactly one pod\nnode_count=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)\npod_count=$(kubectl get pods -l app=node-monitor --no-headers 2>/dev/null | grep -c Running || true)\nif [ \"$pod_count\" -le \"$node_count\" ] && [ \"$pod_count\" -gt 0 ]; then\n  echo \"✓ $pod_count pods running across $node_count nodes\"\nelse\n  echo \"✗ Pod count ($pod_count) doesn't match expected node coverage\"\n  exit 1\nfi\n\necho \"✓ All validations passed\"\nexit 0\n"
+  }
+}

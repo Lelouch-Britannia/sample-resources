@@ -1,0 +1,30 @@
+{
+  "slug": "kubernetes-service-nodeport",
+  "title": "NodePort Service for External Access",
+  "order_index": 4,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Expose a web app Deployment outside the cluster using a NodePort Service. NodePort reserves a port (30000–32767) on every cluster node, forwarding traffic to your Pods — no cloud load balancer needed.\n\n**Why this matters**: NodePort is the simplest way to expose a service externally in bare-metal or local (minikube/kind) clusters. Understanding it also helps you grasp how LoadBalancer Services work under the hood.\n\n**Common Pitfalls**: NodePort values outside 30000–32767 are rejected. Remember that clients must dial `<NodeIP>:<nodePort>`, not the Service ClusterIP port.",
+  "steps": [
+    "Complete the Deployment: 2 replicas of nginx:alpine labeled app=webapp",
+    "Set Service type to NodePort",
+    "Set nodePort to 30080 (must be in range 30000-32767)",
+    "Apply with kubectl apply -f solution.yaml",
+    "Verify Service type and nodePort: kubectl get svc webapp-svc",
+    "Verify endpoints exist: kubectl get endpoints webapp-svc"
+  ],
+  "hints": [
+    "Set spec.type to NodePort in the Service manifest",
+    "nodePort field goes inside the ports array entry, alongside port and targetPort",
+    "If you omit nodePort, Kubernetes auto-assigns one — specify 30080 to make it predictable",
+    "In minikube use 'minikube service webapp-svc --url' to get the accessible URL"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# --- Web App Deployment ---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: webapp\nspec:\n  replicas: # TODO: how many replicas?\n  selector:\n    matchLabels:\n      app: webapp\n  template:\n    metadata:\n      labels:\n        app: webapp\n    spec:\n      containers:\n      - name: webapp\n        image: nginx:alpine\n        ports:\n        - containerPort: 80\n---\n# --- NodePort Service ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: webapp-svc\nspec:\n  type: # TODO: which Service type exposes a port on every node?\n  selector:\n    app: webapp\n  ports:\n  - port: 80\n    targetPort: 80\n    nodePort: # TODO: pick a port in the 30000-32767 range\n"
+  },
+  "_solution": {
+    "code_solution": "# --- Web App Deployment ---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: webapp\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: webapp\n  template:\n    metadata:\n      labels:\n        app: webapp\n    spec:\n      containers:\n      - name: webapp\n        image: nginx:alpine\n        ports:\n        - containerPort: 80\n---\n# --- NodePort Service ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: webapp-svc\nspec:\n  type: NodePort\n  selector:\n    app: webapp\n  ports:\n  - port: 80\n    targetPort: 80\n    nodePort: 30080\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\necho \"Waiting for webapp Deployment to be ready...\"\nkubectl rollout status deployment/webapp --timeout=90s\nif [ $? -ne 0 ]; then\n  echo \"✗ webapp Deployment did not become ready\"\n  exit 1\nfi\necho \"✓ webapp Deployment is ready\"\n\nSVC_TYPE=$(kubectl get svc webapp-svc -o jsonpath='{.spec.type}' 2>/dev/null || echo \"\")\nif [ \"$SVC_TYPE\" != \"NodePort\" ]; then\n  echo \"✗ Service type is '$SVC_TYPE', expected 'NodePort'\"\n  exit 1\nfi\necho \"✓ Service type is NodePort\"\n\nNODE_PORT=$(kubectl get svc webapp-svc -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo \"\")\nif [ -z \"$NODE_PORT\" ]; then\n  echo \"✗ Service webapp-svc has no nodePort assigned\"\n  exit 1\nfi\necho \"✓ NodePort assigned: $NODE_PORT\"\n\nif [ \"$NODE_PORT\" != \"30080\" ]; then\n  echo \"✗ Expected nodePort 30080, got $NODE_PORT\"\n  exit 1\nfi\necho \"✓ nodePort is correctly set to 30080\"\n\nENDPOINTS=$(kubectl get endpoints webapp-svc -o jsonpath='{.subsets[0].addresses}' 2>/dev/null || echo \"\")\nif [ -z \"$ENDPOINTS\" ] || [ \"$ENDPOINTS\" = \"null\" ]; then\n  echo \"✗ Service webapp-svc has no endpoints\"\n  exit 1\nfi\necho \"✓ Service webapp-svc has endpoints\"\n\nREPLICAS=$(kubectl get deployment webapp -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo \"0\")\nif [ \"$REPLICAS\" != \"2\" ]; then\n  echo \"✗ Expected 2 ready replicas, got $REPLICAS\"\n  exit 1\nfi\necho \"✓ Deployment has 2 ready replicas\"\n\necho \"✓ NodePort Service validation passed\"\nexit 0\n"
+  }
+}

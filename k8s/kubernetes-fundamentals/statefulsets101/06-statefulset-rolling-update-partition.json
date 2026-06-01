@@ -1,0 +1,32 @@
+{
+  "slug": "kubernetes-statefulset-partition-update",
+  "title": "StatefulSet Rolling Update with Partition",
+  "order_index": 6,
+  "type": "coding",
+  "difficulty": "advanced",
+  "description": "Use the `partition` field to perform a canary rollout — update only the highest-ordinal Pod first, then complete the rollout by clearing the partition.\n\n**Focus**: The `partition` canary pattern is the safest way to roll out image changes to a StatefulSet running a distributed database.\n\n## Common Pitfalls\n- Forgetting to reset `partition: 0` leaves remaining Pods permanently on the old image.\n- Setting `partition` equal to the replica count blocks ALL updates.\n- Verify image with `kubectl get pod web-2 -o jsonpath='{.spec.containers[0].image}'`.",
+  "steps": [
+    "Create a StatefulSet named 'web' with 3 replicas using image nginx:1.24 and a headless Service",
+    "Wait for all 3 pods to be Running",
+    "Set partition to 2 by patching: kubectl patch statefulset web -p '{\"spec\":{\"updateStrategy\":{\"rollingUpdate\":{\"partition\":2}}}}'",
+    "Update the image to nginx:1.25: kubectl set image statefulset/web nginx=nginx:1.25",
+    "Verify only web-2 has the new image; web-0 and web-1 still run nginx:1.24",
+    "Simulate canary validation passing, then clear the partition: kubectl patch statefulset web -p '{\"spec\":{\"updateStrategy\":{\"rollingUpdate\":{\"partition\":0}}}}'",
+    "Wait for all pods to be updated to nginx:1.25 and verify"
+  ],
+  "hints": [
+    "Check pod image: kubectl get pod web-2 -o jsonpath='{.spec.containers[0].image}'",
+    "kubectl rollout status statefulset/web shows rollout progress",
+    "partition: 2 means 'update pods with ordinal >= 2' — in a 3-pod set that's only web-2",
+    "kubectl patch is the quickest way to update a single field without editing the full manifest",
+    "After clearing partition, RollingUpdate proceeds web-1 then web-0 (descending order)"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# Headless Service\napiVersion: v1\nkind: Service\nmetadata:\n  name: nginx\nspec:\n  clusterIP: None\n  selector:\n    app: nginx\n  ports:\n  - port: 80\n---\n# StatefulSet starting on nginx:1.24\napiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: web\nspec:\n  serviceName: \"nginx\"\n  replicas: 3\n  selector:\n    matchLabels:\n      app: nginx\n  updateStrategy:\n    type: RollingUpdate\n    rollingUpdate:\n      partition: # TODO: Start with partition 0 (update all), we will change it\n  template:\n    metadata:\n      labels:\n        app: nginx\n    spec:\n      containers:\n      - name: nginx\n        image: # TODO: Start with nginx:1.24 (the 'old' version)\n        ports:\n        - containerPort: 80\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: Service\nmetadata:\n  name: nginx\nspec:\n  clusterIP: None\n  selector:\n    app: nginx\n  ports:\n  - port: 80\n---\napiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: web\nspec:\n  serviceName: \"nginx\"\n  replicas: 3\n  selector:\n    matchLabels:\n      app: nginx\n  updateStrategy:\n    type: RollingUpdate\n    rollingUpdate:\n      partition: 0\n  template:\n    metadata:\n      labels:\n        app: nginx\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.24\n        ports:\n        - containerPort: 80\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\n# Wait for all 3 pods on nginx:1.24\necho \"Waiting for 3 pods on nginx:1.24...\"\ntimeout=120\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get pods -l app=nginx --no-headers 2>/dev/null | grep -c Running || true)\n  if [ \"$ready\" -ge 3 ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\nfor pod in web-0 web-1 web-2; do\n  phase=$(kubectl get pod $pod -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Missing\")\n  if [ \"$phase\" != \"Running\" ]; then\n    echo \"✗ Pod $pod not Running before canary test\"\n    exit 1\n  fi\ndone\necho \"✓ All 3 pods Running on nginx:1.24\"\n\n# Set partition=2 and update image\nkubectl patch statefulset web -p '{\"spec\":{\"updateStrategy\":{\"rollingUpdate\":{\"partition\":2}}}}'\nkubectl set image statefulset/web nginx=nginx:1.25\n\n# Wait for web-2 to update\necho \"Waiting for web-2 to update to nginx:1.25...\"\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  img=$(kubectl get pod web-2 -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo \"\")\n  phase=$(kubectl get pod web-2 -o jsonpath='{.status.phase}' 2>/dev/null || echo \"\")\n  if echo \"$img\" | grep -q \"1.25\" && [ \"$phase\" = \"Running\" ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\n# Verify canary: web-2 on new image, web-0/web-1 on old\nweb2_img=$(kubectl get pod web-2 -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo \"\")\nif echo \"$web2_img\" | grep -q \"1.25\"; then\n  echo \"✓ web-2 updated to nginx:1.25 (canary)\"\nelse\n  echo \"✗ web-2 image is '$web2_img', expected nginx:1.25\"\n  exit 1\nfi\n\nfor pod in web-0 web-1; do\n  img=$(kubectl get pod $pod -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo \"\")\n  if echo \"$img\" | grep -q \"1.24\"; then\n    echo \"✓ $pod still on nginx:1.24 (partition respected)\"\n  else\n    echo \"✗ $pod image is '$img', expected nginx:1.24 (partition should block update)\"\n    exit 1\n  fi\ndone\n\n# Clear partition to complete rollout\nkubectl patch statefulset web -p '{\"spec\":{\"updateStrategy\":{\"rollingUpdate\":{\"partition\":0}}}}'\necho \"Partition cleared, waiting for full rollout...\"\ntimeout=120\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  updated=0\n  for pod in web-0 web-1; do\n    img=$(kubectl get pod $pod -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo \"\")\n    phase=$(kubectl get pod $pod -o jsonpath='{.status.phase}' 2>/dev/null || echo \"\")\n    if echo \"$img\" | grep -q \"1.25\" && [ \"$phase\" = \"Running\" ]; then\n      ((updated+=1))\n    fi\n  done\n  if [ \"$updated\" -ge 2 ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\nfor pod in web-0 web-1 web-2; do\n  img=$(kubectl get pod $pod -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo \"\")\n  if echo \"$img\" | grep -q \"1.25\"; then\n    echo \"✓ $pod on nginx:1.25 after full rollout\"\n  else\n    echo \"✗ $pod image is '$img' after full rollout, expected nginx:1.25\"\n    exit 1\n  fi\ndone\n\necho \"✓ All validations passed\"\nexit 0\n"
+  }
+}

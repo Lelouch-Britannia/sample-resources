@@ -1,0 +1,7 @@
+{
+  "slug": "daemonsets101",
+  "name": "DaemonSets 101",
+  "order": 8,
+  "icon": "👁️",
+  "course_slug": "kubernetes-fundamentals"
+}

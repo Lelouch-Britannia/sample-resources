@@ -1,0 +1,32 @@
+{
+  "slug": "kubernetes-statefulset-persistent-storage",
+  "title": "StatefulSet with Persistent Storage",
+  "order_index": 4,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Deploy a StatefulSet with `volumeClaimTemplates` and prove that each Pod's data survives Pod deletion and recreation.\n\n**Focus**: Demonstrating that PVCs are bound to Pod *identity*, not Pod *objects* — the cornerstone of StatefulSet durability.\n\n## Common Pitfalls\n- `volumeClaimTemplates` creates PVCs automatically only on first Pod scheduling — ensure your cluster has a default StorageClass.\n- If you delete web-0 and it doesn't come back, check `kubectl get pvc` for a stuck PVC in `Pending` state.\n- PVCs are never deleted automatically — even after the StatefulSet is deleted.",
+  "steps": [
+    "Create a StatefulSet named 'web' with 2 replicas using nginx:1.25, with a volumeClaimTemplate named 'data' requesting 100Mi at /usr/share/nginx/html",
+    "Verify two PVCs are created: data-web-0 and data-web-1, both Bound",
+    "Write a custom index.html to web-0: kubectl exec web-0 -- sh -c 'echo web-0-data > /usr/share/nginx/html/index.html'",
+    "Delete pod web-0: kubectl delete pod web-0",
+    "Wait for web-0 to be recreated (kubectl get pod web-0 -w)",
+    "Verify data persisted: kubectl exec web-0 -- cat /usr/share/nginx/html/index.html — output must be 'web-0-data'"
+  ],
+  "hints": [
+    "volumeClaimTemplates sits at the same level as spec.template, not inside it",
+    "Use 'nginx' as the app label value — set it on the pod template labels and match it in the Service selector",
+    "accessModes: [ReadWriteOnce] is correct for most single-node storage classes",
+    "After deleting web-0, StatefulSet automatically recreates it and remounts data-web-0",
+    "kubectl get pvc shows all PersistentVolumeClaims — look for data-web-0 and data-web-1",
+    "Use 'kubectl get pod web-0 -w' to watch the pod come back without retyping the command"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: web\nspec:\n  serviceName: \"nginx\"\n  replicas: # TODO: How many replicas?\n  selector:\n    matchLabels:\n      app: # TODO: use 'nginx'\n  template:\n    metadata:\n      labels:\n        app: # TODO: use 'nginx'\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.25\n        ports:\n        - containerPort: 80\n        volumeMounts:\n        - name: data\n          mountPath: /usr/share/nginx/html\n  volumeClaimTemplates:\n  - metadata:\n      name: data\n    spec:\n      accessModes: # TODO: Access mode for single-node storage\n      resources:\n        requests:\n          storage: # TODO: Request a small amount (100Mi)\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: nginx\nspec:\n  clusterIP: None\n  selector:\n    app: # TODO: use 'nginx'\n  ports:\n  - port: 80\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: web\nspec:\n  serviceName: \"nginx\"\n  replicas: 2\n  selector:\n    matchLabels:\n      app: nginx\n  template:\n    metadata:\n      labels:\n        app: nginx\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.25\n        ports:\n        - containerPort: 80\n        volumeMounts:\n        - name: data\n          mountPath: /usr/share/nginx/html\n  volumeClaimTemplates:\n  - metadata:\n      name: data\n    spec:\n      accessModes: [\"ReadWriteOnce\"]\n      resources:\n        requests:\n          storage: 100Mi\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: nginx\nspec:\n  clusterIP: None\n  selector:\n    app: nginx\n  ports:\n  - port: 80\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\n# Wait for both pods\necho \"Waiting for pods web-0 and web-1...\"\ntimeout=120\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get pods web-0 web-1 --no-headers 2>/dev/null | grep -c Running || true)\n  if [ \"$ready\" -ge 2 ]; then\n    break\n  fi\n  sleep 5\n  ((elapsed+=5))\ndone\n\n# Verify PVCs exist and are Bound\nfor pvc in data-web-0 data-web-1; do\n  phase=$(kubectl get pvc $pvc -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Missing\")\n  if [ \"$phase\" = \"Bound\" ]; then\n    echo \"✓ PVC $pvc is Bound\"\n  else\n    echo \"✗ PVC $pvc not found or not Bound (phase: $phase)\"\n    exit 1\n  fi\ndone\n\n# Write data to web-0\nkubectl exec web-0 -- sh -c 'echo web-0-data > /usr/share/nginx/html/index.html'\necho \"✓ Wrote test data to web-0\"\n\n# Delete pod web-0\nkubectl delete pod web-0\necho \"Waiting for web-0 to be recreated...\"\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  phase=$(kubectl get pod web-0 -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Pending\")\n  if [ \"$phase\" = \"Running\" ]; then\n    break\n  fi\n  sleep 5\n  ((elapsed+=5))\ndone\n\nphase=$(kubectl get pod web-0 -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Missing\")\nif [ \"$phase\" != \"Running\" ]; then\n  echo \"✗ web-0 did not recover (phase: $phase)\"\n  exit 1\nfi\necho \"✓ web-0 recovered after deletion\"\n\n# Verify data persisted\ncontent=$(kubectl exec web-0 -- cat /usr/share/nginx/html/index.html 2>/dev/null || echo \"\")\nif [ \"$content\" = \"web-0-data\" ]; then\n  echo \"✓ Data persisted across pod deletion: '$content'\"\nelse\n  echo \"✗ Data did not persist. Got: '$content'\"\n  exit 1\nfi\n\necho \"✓ All validations passed\"\nexit 0\n"
+  }
+}

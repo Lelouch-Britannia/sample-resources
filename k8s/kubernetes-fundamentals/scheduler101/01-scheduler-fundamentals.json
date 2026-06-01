@@ -1,0 +1,76 @@
+{
+  "slug": "kubernetes-scheduler-fundamentals",
+  "title": "Kubernetes Scheduler Fundamentals",
+  "order_index": 1,
+  "type": "conceptual",
+  "difficulty": "beginner",
+  "description": "## What Does the Scheduler Do?\n\nThe **kube-scheduler** is a control plane component that watches for newly created Pods with no assigned Node and selects the best Node for them to run on. Every Pod in Kubernetes goes through the scheduler unless you bypass it explicitly.\n\n## Two-Phase Scheduling\n\nThe scheduler runs two phases for every unscheduled Pod:\n\n### Phase 1: Filtering\nRemoves nodes that **cannot** run the pod. A node fails filtering if it:\n- Lacks sufficient CPU or memory (`NodeResourcesFit`)\n- Does not match the pod's `nodeSelector` labels (`NodeAffinity`)\n- Has a taint the pod does not tolerate (`TaintToleration`)\n- Is unschedulable (cordoned)\n\n### Phase 2: Scoring\nRanks the remaining nodes to find the **best** fit. Scoring plugins include:\n- **LeastAllocated** — prefer nodes with more free resources\n- **NodeAffinity priority** — bonus score for preferred affinity rules\n- **ImageLocality** — prefer nodes that already have the container image\n\nThe pod is bound to the highest-scoring node.\n\n## Direct Placement Options\n\n**nodeName** — bypasses the scheduler entirely, assigning the pod to a specific node:\n```yaml\nspec:\n  nodeName: worker-node-1\n```\n\n**nodeSelector** — simple label-based filtering:\n```yaml\nspec:\n  nodeSelector:\n    disktype: ssd\n```\nThe pod will only schedule on nodes with the label `disktype=ssd`.\n\n## When to Use\n\n- `nodeName`: debugging, static daemon placement\n- `nodeSelector`: basic workload placement (e.g., GPU nodes, SSD nodes)\n- Affinity rules: flexible multi-condition placement (covered in next unit)\n\n## Common Pitfalls\n\n**Pod stuck Pending** — The scheduler could not find a node that passes all filters. Check with `kubectl describe pod` — the Events section will show which filter rejected all nodes (e.g., `Insufficient cpu`, `node(s) didn't match Pod's node affinity`).\n\n**Over-constraining** — Using too many hard scheduling rules (required affinity + nodeSelector + taints) can make it impossible for the scheduler to place the pod on any node, causing permanent Pending status.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "What are the two phases the kube-scheduler runs for each unscheduled Pod?",
+      "options": [
+        {"id": "a", "text": "Binding and Eviction"},
+        {"id": "b", "text": "Filtering and Scoring"},
+        {"id": "c", "text": "Admission and Scheduling"},
+        {"id": "d", "text": "Validation and Placement"}
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "A Pod has been Pending for 10 minutes. What is the best first step to diagnose the issue?",
+      "options": [
+        {"id": "a", "text": "Delete and recreate the pod"},
+        {"id": "b", "text": "Restart the kube-scheduler"},
+        {"id": "c", "text": "Run kubectl describe pod <name> and read the Events section"},
+        {"id": "d", "text": "Check the kubelet logs on all nodes"}
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "What does `spec.nodeName` do when set on a Pod?",
+      "options": [
+        {"id": "a", "text": "Suggests a preferred node to the scheduler"},
+        {"id": "b", "text": "Bypasses the scheduler and assigns the pod directly to that node"},
+        {"id": "c", "text": "Labels the node with the pod's name"},
+        {"id": "d", "text": "Schedules the pod only if the node has matching labels"}
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "Which scheduling plugin is responsible for rejecting nodes that don't match a Pod's nodeSelector?",
+      "options": [
+        {"id": "a", "text": "LeastAllocated"},
+        {"id": "b", "text": "TaintToleration"},
+        {"id": "c", "text": "NodeAffinity"},
+        {"id": "d", "text": "ImageLocality"}
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "A Deployment with nodeSelector: disktype=ssd has all pods in Pending state. No nodes have that label. What should you do?",
+      "options": [
+        {"id": "a", "text": "Delete the Deployment and recreate without nodeSelector"},
+        {"id": "b", "text": "Label a node with disktype=ssd or remove the nodeSelector constraint"},
+        {"id": "c", "text": "Add more replicas to the Deployment"},
+        {"id": "d", "text": "Restart the kube-apiserver"}
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "b",
+      "q2": "c",
+      "q3": "b",
+      "q4": "c",
+      "q5": "b"
+    },
+    "quiz_explanations": {
+      "q1": "The kube-scheduler runs Filtering (which nodes CAN run the pod) followed by Scoring (which remaining node is BEST). Only nodes that pass all filters are scored, and the pod is bound to the highest-scoring node.",
+      "q2": "kubectl describe pod provides the scheduler's reason for not placing the pod in the Events section, such as 'Insufficient cpu', 'node(s) didn't match node affinity', or 'node(s) had taint'. This is the fastest way to identify which constraint is blocking placement.",
+      "q3": "Setting spec.nodeName on a Pod tells the kubelet on that specific node to run the pod directly, completely bypassing the kube-scheduler. This is useful for debugging or running static system pods, but removes all the scheduler's resource-checking and balancing benefits.",
+      "q4": "The NodeAffinity filtering plugin handles both nodeSelector constraints and the more powerful nodeAffinity rules. It removes nodes from consideration if their labels don't satisfy the pod's required node selection criteria.",
+      "q5": "The scheduler cannot place the pod because no node matches the nodeSelector filter. The correct fix is either to label a qualifying node (kubectl label node <name> disktype=ssd) or to relax the constraint by removing or changing the nodeSelector."
+    }
+  }
+}

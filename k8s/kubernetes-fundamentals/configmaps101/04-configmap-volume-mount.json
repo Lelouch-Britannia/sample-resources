@@ -1,0 +1,31 @@
+{
+  "slug": "kubernetes-configmap-volume-mount",
+  "title": "Mount ConfigMap as Volume Files",
+  "order_index": 4,
+  "type": "coding",
+  "difficulty": "beginner",
+  "description": "Deploy a Pod that reads configuration from files mounted from a ConfigMap at `/etc/config/`. Each ConfigMap key becomes a file — this is ideal for apps that read config from disk (e.g., Java `.properties` files, INI files).\n\n**Common Pitfalls:** The `mountPath` directory is fully managed by Kubernetes — any pre-existing files at that path are hidden. Use `subPath` if you need to mount a single key without shadowing the directory.",
+  "steps": [
+    "Define a ConfigMap named 'app-config' with a key 'app.properties' containing multi-line text",
+    "Define a Pod named 'config-reader' using image busybox",
+    "Add a volume of type configMap referencing 'app-config'",
+    "Mount the volume at /etc/config in the container",
+    "Use command: ['sh','-c','cat /etc/config/app.properties && sleep 3600'] to verify the file",
+    "Apply and check logs: kubectl logs config-reader"
+  ],
+  "hints": [
+    "Use the | YAML block scalar to write multi-line values in data",
+    "spec.volumes defines the volume; spec.containers[].volumeMounts mounts it",
+    "The volume name in volumes and volumeMounts must match exactly",
+    "busybox's sh -c lets you run shell commands as the container entrypoint",
+    "Mount the config volume at '/etc/config' so the command can read /etc/config/app.properties"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-config\ndata:\n  app.properties: | # TODO: Add multi-line config, e.g. max.connections=100 and timeout=30s\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: config-reader\nspec:\n  containers:\n  - name: reader\n    image: busybox\n    command: ['sh', '-c', 'cat /etc/config/app.properties && sleep 3600']\n    volumeMounts:\n    - name: config-vol\n      mountPath: # TODO: use '/etc/config'\n  volumes:\n  - name: config-vol\n    configMap:\n      name: app-config\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-config\ndata:\n  app.properties: |\n    max.connections=100\n    timeout=30s\n    log.level=info\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: config-reader\nspec:\n  containers:\n  - name: reader\n    image: busybox\n    command: ['sh', '-c', 'cat /etc/config/app.properties && sleep 3600']\n    volumeMounts:\n    - name: config-vol\n      mountPath: /etc/config\n  volumes:\n  - name: config-vol\n    configMap:\n      name: app-config\n",
+    "validation_script": "#!/bin/bash\nset -e\n\necho 'Checking ConfigMap app-config exists...'\nif ! kubectl get configmap app-config &>/dev/null; then\n  echo '✗ ConfigMap app-config not found'\n  exit 1\nfi\necho '✓ ConfigMap app-config exists'\n\necho 'Checking app.properties key exists...'\nif ! kubectl get configmap app-config -o jsonpath='{.data.app\\.properties}' | grep -q '.'; then\n  echo '✗ app.properties key not found in ConfigMap'\n  exit 1\nfi\necho '✓ app.properties key present'\n\necho 'Waiting for Pod config-reader to be Running...'\nkubectl wait pod config-reader --for=condition=Ready --timeout=60s\necho '✓ Pod config-reader is Running'\n\necho 'Verifying file exists at /etc/config/app.properties in pod...'\nif ! kubectl exec config-reader -- ls /etc/config/app.properties &>/dev/null; then\n  echo '✗ File /etc/config/app.properties not found in pod'\n  exit 1\nfi\necho '✓ File /etc/config/app.properties exists in pod'\n\necho 'Verifying file has content...'\nCONTENT=$(kubectl exec config-reader -- cat /etc/config/app.properties 2>/dev/null)\nif [ -z \"$CONTENT\" ]; then\n  echo '✗ /etc/config/app.properties is empty'\n  exit 1\nfi\necho '✓ File has content'\n\necho ''\necho 'All checks passed!'\nexit 0\n"
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "slug": "kubernetes-configmap-consumption-patterns",
+  "title": "Consuming ConfigMaps in Pods",
+  "order_index": 2,
+  "type": "conceptual",
+  "difficulty": "intermediate",
+  "description": "## Three Ways to Consume a ConfigMap\n\nOnce a ConfigMap exists, pods can consume it in three distinct patterns. Each has different trade-offs around granularity, hot-reload, and use case.\n\n## Pattern 1: envFrom — Inject All Keys\n\nInjects every key in the ConfigMap as an environment variable:\n\n```yaml\nspec:\n  containers:\n  - name: app\n    image: myapp:1.0\n    envFrom:\n    - configMapRef:\n        name: app-config\n```\n\nAll keys become env vars verbatim. Useful when you want the entire ConfigMap as the pod's environment.\n\n## Pattern 2: env.valueFrom.configMapKeyRef — Single Key\n\nInjects a specific key with an optional name override:\n\n```yaml\nenv:\n- name: DATABASE_HOST\n  valueFrom:\n    configMapKeyRef:\n      name: app-config\n      key: DB_HOST\n      optional: true   # pod starts even if key is missing\n```\n\nSetting `optional: true` prevents pod failure when the referenced key does not exist — useful during rolling config migrations.\n\n## Pattern 3: volumes.configMap — Mount as Files\n\nEach key in the ConfigMap becomes a file; the value is the file's content:\n\n```yaml\nspec:\n  volumes:\n  - name: config-vol\n    configMap:\n      name: app-config\n  containers:\n  - name: app\n    volumeMounts:\n    - name: config-vol\n      mountPath: /etc/config\n```\n\nThe pod sees `/etc/config/DB_HOST`, `/etc/config/LOG_LEVEL`, etc. You can use `items` to select specific keys and rename them as filenames.\n\n## Hot Reload Behavior\n\n| Pattern | Updates automatically? |\n|---------|------------------------|\n| `envFrom` | No — env vars are set at pod start |\n| `env.valueFrom` | No — same as above |\n| Volume mount | Yes — kubelet syncs changes within ~60 seconds |\n\nVolume-mounted ConfigMaps are refreshed by the kubelet cache sync period (default 60s plus TTL jitter). The files update atomically via a symlink swap.\n\n## When to Use Which Pattern\n\n- **envFrom**: Twelve-factor apps that read all config from environment\n- **valueFrom**: When you need one or two specific keys, or to rename them\n- **Volume mount**: When the app reads config files from disk, or when you need hot reload\n\n## Common Pitfalls\n\n**Expecting env vars to hot-reload** — This is the most common mistake. If you change a ConfigMap and expect a running pod's env vars to update without a restart, they won't. Restart the pod or use volume mounts.\n\n**Key name case sensitivity** — ConfigMap keys are case-sensitive. `DB_HOST` and `db_host` are different keys. Validate your key names match exactly what the application expects.\n\n**File permissions on volume mounts** — By default, mounted files have permissions `0644`. Use `defaultMode` in the volume spec to change this if your app requires executable scripts or stricter permissions.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "Which ConfigMap consumption pattern supports hot reload without restarting the pod?",
+      "options": [
+        {"id": "a", "text": "envFrom with configMapRef"},
+        {"id": "b", "text": "env.valueFrom.configMapKeyRef"},
+        {"id": "c", "text": "Volume mount with configMap volume type"},
+        {"id": "d", "text": "All three patterns support hot reload"}
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What does setting `optional: true` on a configMapKeyRef do?",
+      "options": [
+        {"id": "a", "text": "Makes the entire ConfigMap optional — the pod starts even if the ConfigMap doesn't exist"},
+        {"id": "b", "text": "The pod starts even if the referenced key is missing from the ConfigMap"},
+        {"id": "c", "text": "The env var will be set to an empty string if the key is missing"},
+        {"id": "d", "text": "Disables validation of the ConfigMap at scheduling time"}
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "You mount a ConfigMap with keys `host` and `port` at `/etc/db`. What files will you find inside the pod?",
+      "options": [
+        {"id": "a", "text": "A single file `/etc/db/config` containing both values"},
+        {"id": "b", "text": "Files `/etc/db/host` and `/etc/db/port`, each containing its respective value"},
+        {"id": "c", "text": "Environment variables HOST and PORT are set"},
+        {"id": "d", "text": "A YAML file at `/etc/db/configmap.yaml`"}
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "You update a ConfigMap that is injected via `envFrom`. When does the running pod see the new values?",
+      "options": [
+        {"id": "a", "text": "Immediately — Kubernetes pushes env var updates to running pods"},
+        {"id": "b", "text": "Within 60 seconds via kubelet sync"},
+        {"id": "c", "text": "Only after the pod is restarted or recreated"},
+        {"id": "d", "text": "After the next node restart"}
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "Which pattern is best for a twelve-factor app that reads all configuration from environment variables?",
+      "options": [
+        {"id": "a", "text": "Volume mount — mount the ConfigMap as files under /etc/config"},
+        {"id": "b", "text": "envFrom — injects all ConfigMap keys as environment variables at once"},
+        {"id": "c", "text": "valueFrom for each key individually"},
+        {"id": "d", "text": "binaryData with base64-encoded values"}
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "c",
+      "q2": "b",
+      "q3": "b",
+      "q4": "c",
+      "q5": "b"
+    },
+    "quiz_explanations": {
+      "q1": "Only volume-mounted ConfigMaps support hot reload. The kubelet watches ConfigMaps used as volumes and updates the files atomically (via symlink swap) within the kubelet sync period (~60s). Environment variable patterns (envFrom and valueFrom) are resolved once at pod startup and never updated in a running pod.",
+      "q2": "Setting optional: true on a configMapKeyRef means the pod will start and run even if the specified key does not exist in the ConfigMap (or if the ConfigMap itself doesn't exist). Without optional: true, a missing key causes the pod to fail with a CreateContainerConfigError.",
+      "q3": "When a ConfigMap is volume-mounted, each key becomes a separate file at the mount path, and the file's content is the key's value. So keys 'host' and 'port' become files /etc/db/host and /etc/db/port respectively.",
+      "q4": "Environment variables injected via envFrom or valueFrom are resolved once when the container starts. Updating the ConfigMap after the pod is running does NOT update the environment variables in the running container. The pod must be restarted (or the Deployment must roll out new pods) to pick up the changes.",
+      "q5": "The envFrom pattern with configMapRef injects all keys from the ConfigMap as environment variables in a single declaration — perfect for twelve-factor apps that follow the convention of reading all config from the environment."
+    }
+  }
+}

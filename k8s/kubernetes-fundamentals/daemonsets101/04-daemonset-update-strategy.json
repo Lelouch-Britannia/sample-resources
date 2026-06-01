@@ -1,0 +1,32 @@
+{
+  "slug": "kubernetes-daemonset-update-strategy",
+  "title": "DaemonSet OnDelete Update Strategy",
+  "order_index": 4,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Deploy a DaemonSet with `OnDelete` update strategy, update the container image, and manually trigger updates by deleting Pods one at a time.\n\n**Focus**: Contrasting `OnDelete` with `RollingUpdate` — useful when you need to drain a node safely before replacing its agent.\n\n## Common Pitfalls\n- After `kubectl set image`, no Pods restart with OnDelete — this is correct, not a bug.\n- Each Pod must be manually deleted to pick up the new image on its node.\n- Verify the replacement Pod uses the new image before deleting the next one.",
+  "steps": [
+    "Create a DaemonSet named 'log-agent' with updateStrategy type: OnDelete using image busybox:1.35",
+    "Verify pods are running and note the current image",
+    "Update the container image to busybox:1.36: kubectl set image daemonset/log-agent agent=busybox:1.36",
+    "Verify no pods have updated automatically (OnDelete does not auto-restart): kubectl get pods -l app=log-agent -o jsonpath='{range .items[*]}{.spec.containers[0].image}{\"\\n\"}{end}'",
+    "Delete one pod manually: kubectl delete pod <pod-name>",
+    "Verify the replacement pod uses the new image busybox:1.36",
+    "Repeat for remaining pods to complete the manual rollout"
+  ],
+  "hints": [
+    "updateStrategy.type: OnDelete must be set inside spec, not spec.template",
+    "After kubectl set image, the StatefulSet DESIRED changes but pods do not restart — this is correct",
+    "kubectl get pods -l app=log-agent -o wide shows pod names and nodes",
+    "After deleting a pod, the DaemonSet creates a new one on the same node with the updated spec",
+    "kubectl describe ds log-agent shows the updateStrategy and current image in the spec"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: log-agent\n  labels:\n    app: log-agent\nspec:\n  selector:\n    matchLabels:\n      app: log-agent\n  updateStrategy:\n    type: # TODO: Which strategy requires manual pod deletion to trigger updates?\n  template:\n    metadata:\n      labels:\n        app: log-agent\n    spec:\n      containers:\n      - name: agent\n        image: # TODO: Start with busybox:1.35 (will be updated to 1.36)\n        command: ['sh', '-c', 'while true; do echo \"Log agent v1 running\"; sleep 30; done']\n        resources:\n          requests:\n            cpu: \"10m\"\n            memory: \"16Mi\"\n          limits:\n            cpu: \"50m\"\n            memory: \"32Mi\"\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: log-agent\n  labels:\n    app: log-agent\nspec:\n  selector:\n    matchLabels:\n      app: log-agent\n  updateStrategy:\n    type: OnDelete\n  template:\n    metadata:\n      labels:\n        app: log-agent\n    spec:\n      containers:\n      - name: agent\n        image: busybox:1.35\n        command: ['sh', '-c', 'while true; do echo \"Log agent v1 running\"; sleep 30; done']\n        resources:\n          requests:\n            cpu: \"10m\"\n            memory: \"16Mi\"\n          limits:\n            cpu: \"50m\"\n            memory: \"32Mi\"\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\n# Wait for DaemonSet pods\necho \"Waiting for log-agent pods...\"\ntimeout=90\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  desired=$(kubectl get ds log-agent -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo \"0\")\n  ready=$(kubectl get ds log-agent -o jsonpath='{.status.numberReady}' 2>/dev/null || echo \"0\")\n  if [ \"$desired\" -gt 0 ] && [ \"$ready\" = \"$desired\" ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\n# Verify updateStrategy is OnDelete\nstrategy=$(kubectl get ds log-agent -o jsonpath='{.spec.updateStrategy.type}' 2>/dev/null || echo \"\")\nif [ \"$strategy\" = \"OnDelete\" ]; then\n  echo \"✓ updateStrategy is OnDelete\"\nelse\n  echo \"✗ updateStrategy is '$strategy', expected OnDelete\"\n  exit 1\nfi\n\n# Verify initial image\nimg=$(kubectl get ds log-agent -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo \"\")\nif echo \"$img\" | grep -q \"busybox:1.35\"; then\n  echo \"✓ Initial image is $img\"\nelse\n  echo \"✗ Initial image is '$img', expected busybox:1.35\"\n  exit 1\nfi\n\n# Update image\nkubectl set image daemonset/log-agent agent=busybox:1.36\necho \"✓ Image updated to busybox:1.36 in spec\"\n\n# Verify pods did NOT auto-update (OnDelete behavior)\nsleep 5\nold_pods=$(kubectl get pods -l app=log-agent -o jsonpath='{range .items[*]}{.spec.containers[0].image}{\"\\n\"}{end}' 2>/dev/null || echo \"\")\nall_old=true\nwhile IFS= read -r podimg; do\n  if echo \"$podimg\" | grep -q \"1.36\"; then\n    all_old=false\n    break\n  fi\ndone <<< \"$old_pods\"\n\nif $all_old; then\n  echo \"✓ No pods auto-updated — OnDelete strategy confirmed\"\nelse\n  echo \"✗ A pod updated automatically — updateStrategy may not be OnDelete\"\n  exit 1\nfi\n\n# Manually delete one pod and verify it gets new image\nfirst_pod=$(kubectl get pods -l app=log-agent --no-headers 2>/dev/null | head -1 | awk '{print $1}')\nif [ -z \"$first_pod\" ]; then\n  echo \"✗ No pods found to delete\"\n  exit 1\nfi\n\nkubectl delete pod \"$first_pod\"\necho \"Deleted pod $first_pod, waiting for replacement...\"\ntimeout=60\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  new_ready=$(kubectl get ds log-agent -o jsonpath='{.status.numberReady}' 2>/dev/null || echo \"0\")\n  desired=$(kubectl get ds log-agent -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo \"1\")\n  if [ \"$new_ready\" = \"$desired\" ]; then break; fi\n  sleep 5; ((elapsed+=5))\ndone\n\n# Find the new pod (different name) and check its image\nnew_pods=$(kubectl get pods -l app=log-agent -o jsonpath='{range .items[*]}{.spec.containers[0].image}{\"\\n\"}{end}' 2>/dev/null || echo \"\")\nfound_new=false\nwhile IFS= read -r podimg; do\n  if echo \"$podimg\" | grep -q \"1.36\"; then\n    found_new=true\n    break\n  fi\ndone <<< \"$new_pods\"\n\nif $found_new; then\n  echo \"✓ Replacement pod is running busybox:1.36 after manual deletion\"\nelse\n  echo \"✗ No pod with busybox:1.36 found after manual deletion\"\n  exit 1\nfi\n\necho \"✓ All validations passed\"\nexit 0\n"
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "slug": "kubernetes-service-discovery-dns",
+  "title": "Service Discovery and DNS in Kubernetes",
+  "order_index": 2,
+  "type": "conceptual",
+  "difficulty": "intermediate",
+  "description": "## Overview\nOnce you have Services, workloads need to find them. Kubernetes uses **CoreDNS** as the cluster-internal DNS server to resolve Service names to their ClusterIPs. Every Pod is automatically configured to use CoreDNS as its DNS resolver, so name resolution works out of the box.\n\n## Key Concepts\n\n### CoreDNS\nCoreDNS runs as a Deployment in the `kube-system` namespace and is exposed via a Service named `kube-dns`. Every Pod's `/etc/resolv.conf` points to the `kube-dns` ClusterIP, with search domains configured for the Pod's namespace:\n\n```\nnameserver 10.96.0.10\nsearch default.svc.cluster.local svc.cluster.local cluster.local\n```\n\n### DNS Record Types\n- **A/AAAA records**: Created for every ClusterIP Service. Resolves to the Service's virtual IP.\n- **SRV records**: Created for named ports. Format: `_port-name._protocol.svc-name.namespace.svc.cluster.local`. Useful for service mesh and automatic port discovery.\n\n### Short Names and FQDN\nBecause of the search domains in `resolv.conf`, a Pod in namespace `default` can reach a Service in the same namespace with just its short name:\n\n```bash\n# All equivalent from a Pod in 'default' namespace:\ncurl http://backend-svc\ncurl http://backend-svc.default\ncurl http://backend-svc.default.svc.cluster.local\n```\n\nFrom a different namespace, the short name will fail — you must use at minimum `svc-name.target-namespace`:\n\n```bash\n# From namespace 'frontend' reaching 'backend-svc' in 'backend' namespace:\ncurl http://backend-svc.backend.svc.cluster.local\n```\n\n### Headless Services\nSetting `clusterIP: None` creates a **headless Service**. No virtual IP is allocated. Instead, DNS returns the individual Pod IPs directly as A records. This is essential for **StatefulSets**, where each Pod needs a stable, addressable identity:\n\n```yaml\napiVersion: v1\nkind: Service\nmetadata:\n  name: db-headless\nspec:\n  clusterIP: None       # headless — no VIP\n  selector:\n    app: db\n  ports:\n  - port: 5432\n    targetPort: 5432\n```\n\nAn `nslookup db-headless` from a Pod returns one A record per backing Pod, enabling direct Pod addressing.\n\n### Service Without a Selector\nA Service can exist without a selector. Kubernetes will not auto-create Endpoints; you manage them manually. This is useful for pointing a Service at an external database during a migration:\n\n```yaml\napiVersion: v1\nkind: Endpoints\nmetadata:\n  name: external-db     # must match Service name exactly\nsubsets:\n- addresses:\n  - ip: 192.168.1.50    # external host IP\n  ports:\n  - port: 5432\n```\n\n### Pod DNS\nPods also get DNS records in the form `pod-ip-dashes.namespace.pod.cluster.local`. For example, a Pod with IP `10.244.0.5` in namespace `default` resolves as `10-244-0-5.default.pod.cluster.local`. This is rarely used directly but matters for StatefulSet Pod addressing.\n\n## When to Use Headless vs ClusterIP\n- **ClusterIP**: Stateless services — web APIs, caches, proxies. You want load balancing and a stable single endpoint.\n- **Headless**: Stateful services — databases, Kafka brokers, Zookeeper. Clients need to discover and connect to individual Pods (e.g., for leader election or primary/replica routing).\n\n## Common Pitfalls\n- **DNS negative caching**: Pods may cache failed DNS lookups for a few seconds. Transient failures can cause puzzling connection errors right after a Service is created.\n- **Relying on Pod IPs directly**: Pod IPs are unstable. Always use a Service DNS name instead.\n- **Cross-namespace without FQDN**: Short names only resolve within the same namespace. Using `svc-name` from another namespace silently resolves to nothing or the wrong Service if the name collides.\n- **Headless with no selector**: DNS returns nothing if the selector matches zero Pods. Confirm Endpoints are populated before debugging DNS.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "Which Kubernetes component resolves Service DNS names to ClusterIP addresses?",
+      "options": [
+        {"id": "a", "text": "kube-proxy"},
+        {"id": "b", "text": "etcd"},
+        {"id": "c", "text": "CoreDNS"},
+        {"id": "d", "text": "kubelet"}
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "A Pod in namespace 'payments' needs to call a Service named 'ledger-svc' in namespace 'finance'. Which DNS name will work?",
+      "options": [
+        {"id": "a", "text": "ledger-svc"},
+        {"id": "b", "text": "ledger-svc.svc.cluster.local"},
+        {"id": "c", "text": "ledger-svc.finance.svc.cluster.local"},
+        {"id": "d", "text": "finance.ledger-svc"}
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "What is the effect of setting clusterIP: None on a Service?",
+      "options": [
+        {"id": "a", "text": "The Service is disabled and no traffic is routed"},
+        {"id": "b", "text": "DNS returns individual Pod IPs instead of a virtual IP"},
+        {"id": "c", "text": "The Service is only accessible via NodePort"},
+        {"id": "d", "text": "kube-proxy stops managing iptables rules for that Service"}
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "Why would you create a Service without a selector?",
+      "options": [
+        {"id": "a", "text": "To make the Service accessible from outside the cluster"},
+        {"id": "b", "text": "To point the Service at an external host by managing Endpoints manually"},
+        {"id": "c", "text": "To prevent any Pod from receiving traffic from the Service"},
+        {"id": "d", "text": "Because StatefulSets require selector-less Services"}
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "Which Service type is most appropriate for a Kafka cluster where clients need to connect to individual brokers?",
+      "options": [
+        {"id": "a", "text": "ClusterIP"},
+        {"id": "b", "text": "NodePort"},
+        {"id": "c", "text": "LoadBalancer"},
+        {"id": "d", "text": "Headless (clusterIP: None)"}
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "c",
+      "q2": "c",
+      "q3": "b",
+      "q4": "b",
+      "q5": "d"
+    },
+    "quiz_explanations": {
+      "q1": "CoreDNS runs in the kube-system namespace and acts as the cluster DNS server. Every Pod's /etc/resolv.conf points to CoreDNS so Service names resolve automatically.",
+      "q2": "Short names only resolve within the same namespace. From 'payments', the name 'ledger-svc' would search 'payments.svc.cluster.local' and not find it. The correct cross-namespace form is 'ledger-svc.finance.svc.cluster.local' (or at minimum 'ledger-svc.finance').",
+      "q3": "A headless Service (clusterIP: None) has no virtual IP. CoreDNS instead returns A records for each individual Pod IP that matches the selector, enabling clients to connect directly to specific Pods.",
+      "q4": "Without a selector, Kubernetes does not auto-populate Endpoints. You create the Endpoints object manually, pointing to any IP — including external hosts outside the cluster. This is a common migration pattern for moving external databases into the cluster gradually.",
+      "q5": "Kafka clients need to discover individual broker addresses for partition leadership and direct connections. A headless Service returns per-Pod DNS entries, allowing clients to enumerate and connect to each broker independently."
+    }
+  }
+}

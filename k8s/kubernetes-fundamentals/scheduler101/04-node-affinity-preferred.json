@@ -1,0 +1,29 @@
+{
+  "slug": "kubernetes-node-affinity-preferred",
+  "title": "Node Affinity with Preferred Rule",
+  "order_index": 4,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Deploy a Deployment using `preferredDuringSchedulingIgnoredDuringExecution` node affinity for `zone=us-east-1a`. Pods prefer that zone but still schedule on other nodes when unavailable — unlike a `required` rule that would leave them Pending.\n\n**Common Pitfalls:** With `preferred` affinity, if no matching node exists, pods still schedule elsewhere — this is by design. Contrast this with `required`, where unmatched rules cause permanent Pending. Always use `preferred` unless strict placement is truly necessary.",
+  "steps": [
+    "Create a Deployment 'zone-aware-app' with 2 replicas",
+    "Add preferredDuringSchedulingIgnoredDuringExecution nodeAffinity for zone=us-east-1a with weight 80",
+    "Apply and verify pods schedule (they should even if no node has zone=us-east-1a)",
+    "Check pod placement: kubectl get pods -o wide",
+    "Observe all pods are Running — preferred affinity never blocks scheduling"
+  ],
+  "hints": [
+    "preferredDuringSchedulingIgnoredDuringExecution is a list of objects, each with 'weight' and 'preference'",
+    "preference uses matchExpressions with key, operator (In/NotIn/Exists), and values",
+    "weight must be between 1 and 100",
+    "kubectl get pods -o wide shows the NODE column to verify placement"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: zone-aware-app\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: zone-aware-app\n  template:\n    metadata:\n      labels:\n        app: zone-aware-app\n    spec:\n      affinity:\n        nodeAffinity:\n          preferredDuringSchedulingIgnoredDuringExecution:\n          - weight: # TODO: Set a weight between 1-100\n            preference:\n              matchExpressions:\n              - key: zone\n                operator: In\n                values:\n                - # TODO: Which zone to prefer?\n      containers:\n      - name: app\n        image: nginx:alpine\n"
+  },
+  "_solution": {
+    "code_solution": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: zone-aware-app\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: zone-aware-app\n  template:\n    metadata:\n      labels:\n        app: zone-aware-app\n    spec:\n      affinity:\n        nodeAffinity:\n          preferredDuringSchedulingIgnoredDuringExecution:\n          - weight: 80\n            preference:\n              matchExpressions:\n              - key: zone\n                operator: In\n                values:\n                - us-east-1a\n      containers:\n      - name: app\n        image: nginx:alpine\n",
+    "validation_script": "#!/bin/bash\nset -e\n\necho 'Checking Deployment zone-aware-app exists...'\nif ! kubectl get deployment zone-aware-app &>/dev/null; then\n  echo '✗ Deployment zone-aware-app not found'\n  exit 1\nfi\necho '✓ Deployment zone-aware-app exists'\n\necho 'Checking replicas is 2...'\nREPLICAS=$(kubectl get deployment zone-aware-app -o jsonpath='{.spec.replicas}')\nif [ \"$REPLICAS\" != \"2\" ]; then\n  echo \"✗ Expected 2 replicas, got $REPLICAS\"\n  exit 1\nfi\necho '✓ Deployment has 2 replicas'\n\necho 'Checking preferredDuringScheduling nodeAffinity is configured...'\nAFFINITY=$(kubectl get deployment zone-aware-app -o jsonpath='{.spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution}')\nif [ -z \"$AFFINITY\" ] || [ \"$AFFINITY\" = \"null\" ] || [ \"$AFFINITY\" = \"[]\" ]; then\n  echo '✗ preferredDuringSchedulingIgnoredDuringExecution not set'\n  exit 1\nfi\necho '✓ preferredDuringScheduling nodeAffinity is configured'\n\necho 'Checking weight is set (should be 1-100)...'\nWEIGHT=$(kubectl get deployment zone-aware-app -o jsonpath='{.spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight}')\nif [ -z \"$WEIGHT\" ] || [ \"$WEIGHT\" -lt 1 ] || [ \"$WEIGHT\" -gt 100 ]; then\n  echo \"✗ weight must be 1-100, got '$WEIGHT'\"\n  exit 1\nfi\necho \"✓ weight is $WEIGHT\"\n\necho 'Waiting for Deployment to be available...'\nkubectl rollout status deployment/zone-aware-app --timeout=90s\necho '✓ Deployment zone-aware-app is available'\n\necho ''\necho 'All checks passed!'\nexit 0\n"
+  }
+}

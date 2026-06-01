@@ -1,0 +1,112 @@
+{
+  "slug": "kubernetes-statefulset-storage-updates",
+  "title": "StatefulSet Storage and Update Strategies",
+  "order_index": 2,
+  "type": "conceptual",
+  "difficulty": "intermediate",
+  "description": "Explore how StatefulSets manage persistent storage per Pod and how rolling updates and partitions enable safe, controlled rollouts.\n\n## Overview\nTwo of the most powerful — and most misunderstood — StatefulSet features are its **per-Pod PVC management** and its **partition-based rolling update**. Together they let you treat individual database replicas as first-class citizens during both normal operations and upgrades.\n\n## volumeClaimTemplates: Per-Pod Persistent Storage\n\nWhen a StatefulSet has `volumeClaimTemplates`, Kubernetes automatically creates one PVC per Pod using a predictable naming scheme: `<template-name>-<pod-name>`. For a 3-replica StatefulSet named `web` with a template named `data`, you get:\n\n| Pod | PVC |\n|-----|-----|\n| web-0 | data-web-0 |\n| web-1 | data-web-1 |\n| web-2 | data-web-2 |\n\nThis binding is **permanent** — if `web-1` is deleted and recreated, it reattaches to `data-web-1`, not a fresh PVC. Data survives Pod failures.\n\n### PVC Lifecycle Details\n- PVCs are created when Pods are first scheduled.\n- PVCs survive Pod deletion (and even StatefulSet deletion).\n- PVCs are **not** automatically deleted on scale-down — `data-web-2` remains after scaling from 3 to 2 replicas.\n- To free storage, delete orphaned PVCs manually: `kubectl delete pvc data-web-2`.\n\n## Rolling Updates\n\nThe default `RollingUpdate` strategy replaces Pods from the **highest ordinal downward**:\n\n```\nweb-2 updated → web-1 updated → web-0 updated\n```\n\nEach Pod must pass readiness before the next is updated. This is the reverse of creation order, which is intentional — in replicated databases, replicas (higher ordinals) should be updated before the primary (ordinal 0).\n\n```yaml\nspec:\n  updateStrategy:\n    type: RollingUpdate\n    rollingUpdate:\n      partition: 0   # Default: update all pods\n```\n\n### OnDelete Strategy\nSet `type: OnDelete` to disable automatic updates. Pods only get the new template when you **manually delete** them. Use this when you need full control over which Pod updates and when — for example, draining a database node safely before replacing it.\n\n## Partition: Canary Rollouts for StatefulSets\n\nThe `partition` field is a powerful feature unique to StatefulSets. When set, **only Pods with ordinal >= partition receive the updated spec**. Pods below the partition keep the old version.\n\n```yaml\nspec:\n  updateStrategy:\n    type: RollingUpdate\n    rollingUpdate:\n      partition: 2   # Only web-2 gets the new image; web-0 and web-1 stay on old image\n```\n\nThis acts as a **canary deployment**: update the highest-ordinal Pod, validate it, then lower the partition to roll out further.\n\n**Important**: After a canary is validated, you must explicitly set `partition: 0` (or remove it) to complete the rollout. A forgotten partition blocks the remaining Pods indefinitely.\n\n## Scaling Behavior\n\n- **Scale up** (e.g., 2 → 4): Creates `web-2` then `web-3` in order, each getting a new PVC.\n- **Scale down** (e.g., 4 → 2): Deletes `web-3` then `web-2` in reverse order. PVCs `data-web-3` and `data-web-2` remain.\n\n## Common Pitfalls\n- **Forgotten partition**: Setting `partition: 2` for a canary and forgetting to reset it leaves `web-0` and `web-1` on the old image indefinitely. Always reset after validating.\n- **Running out of PV capacity on scale-up**: Each new Pod needs a new PVC. If your storage class cannot provision more volumes, new Pods will stay Pending.\n- **Incompatible schema changes**: If a new image requires a different on-disk data format, rolling update will break lower-ordinal Pods that still hold old-format data. Plan schema migrations carefully with `OnDelete` strategy and manual coordination.\n- **Assuming PVCs are cleaned up**: Teams often discover surprise storage bills from accumulated PVCs left by scale-downs weeks earlier.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "A StatefulSet named 'db' has a volumeClaimTemplate named 'storage'. What is the PVC name for the second Pod (db-1)?",
+      "options": [
+        {
+          "id": "a",
+          "text": "db-storage-1"
+        },
+        {
+          "id": "b",
+          "text": "storage-db-1"
+        },
+        {
+          "id": "c",
+          "text": "pvc-db-1"
+        },
+        {
+          "id": "d",
+          "text": "storage-1"
+        }
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "A StatefulSet has 3 replicas and you update its container image. In what order are the Pods updated (RollingUpdate)?",
+      "options": [
+        {
+          "id": "a",
+          "text": "web-0, web-1, web-2 (ascending ordinal)"
+        },
+        {
+          "id": "b",
+          "text": "All three simultaneously"
+        },
+        {
+          "id": "c",
+          "text": "web-2, web-1, web-0 (descending ordinal)"
+        },
+        {
+          "id": "d",
+          "text": "Random order determined by the scheduler"
+        }
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "You set partition: 2 on a 3-replica StatefulSet and update the image. Which Pods get the new image?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Only web-0 and web-1 (ordinals below partition)"
+        },
+        {
+          "id": "b",
+          "text": "Only web-2 (ordinal >= partition)"
+        },
+        {
+          "id": "c",
+          "text": "All three Pods"
+        },
+        {
+          "id": "d",
+          "text": "No Pods — partition blocks all updates"
+        }
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "You scale a StatefulSet down from 4 to 2 replicas. What happens to the PVCs for web-2 and web-3?",
+      "options": [
+        {
+          "id": "a",
+          "text": "They are automatically deleted to free storage"
+        },
+        {
+          "id": "b",
+          "text": "They are retained and must be manually deleted"
+        },
+        {
+          "id": "c",
+          "text": "They are merged into a single PVC shared by web-0 and web-1"
+        },
+        {
+          "id": "d",
+          "text": "They are archived and automatically restored on scale-up"
+        }
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "b",
+      "q2": "c",
+      "q3": "b",
+      "q4": "b"
+    },
+    "quiz_explanations": {
+      "q1": "PVC names follow the pattern <template-name>-<pod-name>. For StatefulSet 'db' with template 'storage' and Pod 'db-1', the PVC is named 'storage-db-1'. This predictable naming is what allows a recreated Pod to find and reattach to its original data.",
+      "q2": "RollingUpdate on a StatefulSet proceeds in descending ordinal order — from the highest-numbered Pod down to web-0. This is intentional: in replicated databases, replica Pods (higher ordinals) should absorb the update first, while the primary (ordinal 0) is updated last to minimize disruption.",
+      "q3": "With partition: 2, only Pods with ordinal >= 2 are updated. In a 3-replica StatefulSet (web-0, web-1, web-2), only web-2 receives the new image. web-0 and web-1 remain on the old version. This enables canary-style validation before committing to a full rollout.",
+      "q4": "StatefulSet PVCs are never automatically deleted — not on Pod deletion, scale-down, or StatefulSet deletion. This is a deliberate safety mechanism to prevent data loss. After scaling down, the PVCs for removed Pods persist and must be deleted manually when you are certain the data is no longer needed."
+    }
+  }
+}

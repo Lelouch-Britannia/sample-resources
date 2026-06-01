@@ -1,0 +1,7 @@
+{
+  "slug": "services101",
+  "name": "Services 101",
+  "order": 6,
+  "icon": "🔗",
+  "course_slug": "kubernetes-fundamentals"
+}

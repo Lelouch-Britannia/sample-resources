@@ -1,0 +1,160 @@
+{
+  "slug": "kubernetes-ingress-fundamentals",
+  "title": "Ingress: HTTP Routing and TLS",
+  "order_index": 1,
+  "type": "conceptual",
+  "difficulty": "intermediate",
+  "description": "Understand how Kubernetes Ingress consolidates HTTP/HTTPS routing at Layer 7, replacing the sprawl of per-service NodePorts and LoadBalancers.\n\n## Overview\nBefore Ingress, exposing multiple services externally meant creating a NodePort or LoadBalancer for each one. That model is expensive (each LoadBalancer has a cost) and operationally messy. Ingress introduces a single L7 entry point that inspects the HTTP Host header and URL path, then routes to the correct backend Service. A single external IP or load balancer can serve an unlimited number of services.\n\n## Ingress vs Service\nServices operate at Layer 4 (TCP/UDP): they forward raw TCP connections to Pods based on label selectors. They have no awareness of HTTP. Ingress operates at Layer 7 (HTTP/HTTPS): it can inspect Host headers, URL paths, and TLS certificates, enabling:\n- Host-based routing: `app.example.com` → frontend, `api.example.com` → backend\n- Path-based routing: `/api` → api-service, `/static` → cdn-service\n- TLS termination: decrypt HTTPS at the Ingress, forward plain HTTP to Pods\n\n## Ingress Controller\nThe Ingress resource is **only configuration**. Nothing happens unless you install an Ingress Controller — the actual software that reads Ingress resources and programs a reverse proxy. Popular choices:\n- **nginx-ingress**: Most widely used; mature, many annotations\n- **Traefik**: Cloud-native, dynamic config via CRDs\n- **Contour**: Built on Envoy; strong HTTP/2 support\n- **HAProxy**: High-performance option for heavy workloads\n\nInstall a controller (e.g., `kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml`) before creating any Ingress resources.\n\n## Key Resource Fields\n\n```yaml\napiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: my-ingress\n  namespace: default\nspec:\n  ingressClassName: nginx        # Which controller handles this\n  defaultBackend:                # Catch-all for unmatched requests\n    service:\n      name: fallback-service\n      port:\n        number: 80\n  tls:\n  - hosts:\n    - app.example.com\n    secretName: app-tls-secret   # kubernetes.io/tls Secret\n  rules:\n  - host: app.example.com\n    http:\n      paths:\n      - path: /api\n        pathType: Prefix\n        backend:\n          service:\n            name: api-service\n            port:\n              number: 8080\n      - path: /\n        pathType: Prefix\n        backend:\n          service:\n            name: frontend-service\n            port:\n              number: 80\n```\n\n## Path Types\n- **Exact**: matches only that exact URL (e.g., `/foo` matches `/foo` but not `/foo/bar`)\n- **Prefix**: matches the path and all subpaths (e.g., `/foo` matches `/foo`, `/foo/bar`, `/foo/baz`)\n- **ImplementationSpecific**: controller-defined semantics — avoid unless you know your controller's behavior\n\n## TLS Termination\nCreate a `kubernetes.io/tls` Secret containing `tls.crt` and `tls.key`, then reference it in `spec.tls[].secretName`. The controller handles the TLS handshake; backend Services receive plain HTTP.\n\n```yaml\napiVersion: v1\nkind: Secret\nmetadata:\n  name: app-tls-secret\ntype: kubernetes.io/tls\ndata:\n  tls.crt: <base64-encoded-cert>\n  tls.key: <base64-encoded-key>\n```\n\n## When to Use Ingress\n- Multiple services need external access from a single IP\n- You need host-based or path-based HTTP routing\n- TLS termination at a central point\n- You want to avoid provisioning one cloud load balancer per service\n\n## When NOT to Use Ingress\n- Non-HTTP traffic (gRPC on non-standard ports, raw TCP, UDP) — use LoadBalancer or NodePort\n- A single service needs exposure — a plain Service of type LoadBalancer or NodePort is simpler\n- You need WebSocket or HTTP/2 with specific headers — verify your controller supports it\n\n## Common Pitfalls\n- **No controller installed**: the Ingress resource is created but nothing routes traffic. Check `kubectl get pods -n ingress-nginx`.\n- **Wrong path type**: using `Exact` when you mean `Prefix` causes mysterious 404s for sub-paths.\n- **TLS Secret format**: the Secret must be type `kubernetes.io/tls` with keys exactly `tls.crt` and `tls.key`. Wrong keys silently fail.\n- **ingressClassName mismatch**: if the class name doesn't match any running controller, the Ingress is ignored.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "What is the primary advantage of using an Ingress over creating a LoadBalancer Service for every microservice?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Ingress makes Services run faster by bypassing kube-proxy"
+        },
+        {
+          "id": "b",
+          "text": "A single external IP and load balancer can route to many services based on host/path rules, reducing cost and complexity"
+        },
+        {
+          "id": "c",
+          "text": "Ingress replaces Services entirely, so you no longer need ClusterIP Services"
+        },
+        {
+          "id": "d",
+          "text": "Ingress automatically scales backend Pods based on HTTP traffic"
+        }
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "An Ingress resource is applied but no traffic is routed. What is the most likely cause?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The Pods are not labeled correctly"
+        },
+        {
+          "id": "b",
+          "text": "The Ingress spec is missing a defaultBackend"
+        },
+        {
+          "id": "c",
+          "text": "No Ingress Controller is installed in the cluster"
+        },
+        {
+          "id": "d",
+          "text": "Ingress requires a NodePort Service to work"
+        }
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "Which pathType would match the request path /api/users as well as /api?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Exact"
+        },
+        {
+          "id": "b",
+          "text": "Prefix"
+        },
+        {
+          "id": "c",
+          "text": "ImplementationSpecific"
+        },
+        {
+          "id": "d",
+          "text": "Wildcard"
+        }
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "What Secret type is required for Ingress TLS termination?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Opaque"
+        },
+        {
+          "id": "b",
+          "text": "kubernetes.io/dockerconfigjson"
+        },
+        {
+          "id": "c",
+          "text": "kubernetes.io/tls"
+        },
+        {
+          "id": "d",
+          "text": "kubernetes.io/service-account-token"
+        }
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "At which OSI layer does a Kubernetes Service (ClusterIP/NodePort/LoadBalancer) operate?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Layer 7 — Application (HTTP)"
+        },
+        {
+          "id": "b",
+          "text": "Layer 3 — Network (IP)"
+        },
+        {
+          "id": "c",
+          "text": "Layer 4 — Transport (TCP/UDP)"
+        },
+        {
+          "id": "d",
+          "text": "Layer 2 — Data Link"
+        }
+      ]
+    },
+    {
+      "id": "q6",
+      "question": "Which field in the Ingress spec determines which Ingress Controller will handle the resource?",
+      "options": [
+        {
+          "id": "a",
+          "text": "spec.controllerName"
+        },
+        {
+          "id": "b",
+          "text": "spec.ingressClassName"
+        },
+        {
+          "id": "c",
+          "text": "metadata.annotations[\"controller\"]"
+        },
+        {
+          "id": "d",
+          "text": "spec.rules[].host"
+        }
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "b",
+      "q2": "c",
+      "q3": "b",
+      "q4": "c",
+      "q5": "c",
+      "q6": "b"
+    },
+    "quiz_explanations": {
+      "q1": "Ingress consolidates L7 HTTP routing behind a single entry point (one external IP / load balancer). Without Ingress, each service that needs external access requires its own cloud load balancer, which is costly and hard to manage at scale.",
+      "q2": "The Ingress resource is purely declarative configuration. Without a running Ingress Controller watching for Ingress resources and programming a real reverse proxy, no traffic will be routed regardless of how correct the Ingress YAML is.",
+      "q3": "pathType: Prefix matches the specified path and all sub-paths beneath it. A path of /api with Prefix matches /api, /api/, /api/users, /api/v2/items, etc. Exact would only match the literal string /api.",
+      "q4": "Ingress TLS requires a Secret of type kubernetes.io/tls containing exactly two keys: tls.crt (the certificate) and tls.key (the private key), both base64-encoded. Using the wrong type or key names causes the controller to silently ignore the TLS config.",
+      "q5": "Kubernetes Services (ClusterIP, NodePort, LoadBalancer) use kube-proxy/iptables/IPVS to forward TCP/UDP connections based on IP and port — that is Layer 4. They have no awareness of HTTP headers, host names, or URL paths.",
+      "q6": "spec.ingressClassName tells the cluster which IngressClass (and therefore which Ingress Controller) should manage this Ingress resource. If omitted, the default IngressClass is used. If there is no matching class, the Ingress is ignored by all controllers."
+    }
+  }
+}

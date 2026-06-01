@@ -1,0 +1,7 @@
+{
+  "slug": "scheduler101",
+  "name": "Scheduler 101",
+  "order": 5,
+  "icon": "📅",
+  "course_slug": "kubernetes-fundamentals"
+}

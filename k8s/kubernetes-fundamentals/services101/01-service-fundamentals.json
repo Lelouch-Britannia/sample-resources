@@ -1,0 +1,76 @@
+{
+  "slug": "kubernetes-service-fundamentals",
+  "title": "Services: Stable Network Endpoints",
+  "order_index": 1,
+  "type": "conceptual",
+  "difficulty": "beginner",
+  "description": "## Overview\nPods are ephemeral — they are created and destroyed constantly by controllers like Deployments. Each Pod gets its own IP address, but that IP changes every time the Pod is replaced. If your frontend app hardcodes a backend Pod IP, it breaks the next time the backend Pod restarts.\n\n**Services** solve this by providing a stable virtual IP (ClusterIP) and DNS name that persists regardless of Pod churn. Kubernetes keeps a live list of healthy Pod IPs behind each Service and automatically routes traffic to them.\n\n## Key Concepts\n\n### kube-proxy and Traffic Routing\nEvery node runs `kube-proxy`, which watches the Kubernetes API and programs iptables (or IPVS) rules on each node. When traffic hits a Service IP, these rules transparently redirect it to one of the backing Pod IPs using load balancing.\n\n### Endpoints and EndpointSlices\nKubernetes maintains an `Endpoints` object (or `EndpointSlice` for larger clusters) for each Service. This is the live list of Pod IPs and ports that match the Service's label selector. You can inspect it with `kubectl get endpoints <service-name>`.\n\n### Label Selectors\nA Service finds its Pods using a label selector. The selector must exactly match labels on the Pods:\n\n```yaml\n# Service selects Pods with app=backend\napiVersion: v1\nkind: Service\nmetadata:\n  name: backend-svc\nspec:\n  selector:\n    app: backend       # must match Pod labels exactly\n  ports:\n  - port: 80           # port exposed by the Service\n    targetPort: 8080   # port the container listens on\n```\n\n### Service Types\n\n**ClusterIP** (default): Assigns a virtual IP reachable only within the cluster. Used for internal service-to-service communication.\n\n**NodePort**: Extends ClusterIP by also opening a static port (30000–32767) on every node's IP. External clients can reach the Service via `<NodeIP>:<nodePort>`.\n\n```yaml\nspec:\n  type: NodePort\n  ports:\n  - port: 80\n    targetPort: 8080\n    nodePort: 30080    # optional; auto-assigned if omitted\n```\n\n**LoadBalancer**: Extends NodePort and requests a cloud provider load balancer. Only works with cloud providers that have a controller (EKS, GKE, AKS). Avoid in local clusters without MetalLB.\n\n**ExternalName**: Maps a Service to a DNS name outside the cluster. No selector; no proxy — just a CNAME record.\n\n```yaml\nspec:\n  type: ExternalName\n  externalName: db.example.com\n```\n\n### Port Fields Explained\n- `port`: The port clients use to reach the Service\n- `targetPort`: The port on the container (can be a number or named port)\n- `nodePort`: The port opened on every node (NodePort/LoadBalancer types only)\n\n### DNS\nCoreDNS gives every Service an automatic DNS record: `<name>.<namespace>.svc.cluster.local`. From within the same namespace, the short form `<name>` resolves correctly.\n\n## When to Use Each Type\n- **ClusterIP**: Internal APIs, databases, caches — anything that should not be exposed outside the cluster\n- **NodePort**: Dev/test direct access, bare-metal clusters without a load balancer\n- **LoadBalancer**: Production ingress on managed cloud Kubernetes\n- **ExternalName**: Gradually migrating an external dependency into the cluster\n\n## Common Pitfalls\n- **Selector mismatch**: If Service selector labels don't match any Pod labels, `Endpoints` will be empty and all connections fail. Always run `kubectl get endpoints <svc>` to confirm.\n- **port vs targetPort confusion**: `port` is what callers dial; `targetPort` is what the container actually binds. They are often different.\n- **NodePort range**: Ports below 30000 or above 32767 are rejected by the API server.\n- **Cross-namespace DNS**: The short hostname only resolves within the same namespace. Use the FQDN `svc.namespace.svc.cluster.local` from other namespaces.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "Why do Kubernetes Services exist?",
+      "options": [
+        {"id": "a", "text": "To schedule Pods onto nodes"},
+        {"id": "b", "text": "To provide a stable virtual IP and DNS name that survives Pod replacement"},
+        {"id": "c", "text": "To store secrets and configuration"},
+        {"id": "d", "text": "To define how many Pod replicas should run"}
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What component programs iptables rules on each node to route Service traffic to Pod IPs?",
+      "options": [
+        {"id": "a", "text": "kubelet"},
+        {"id": "b", "text": "CoreDNS"},
+        {"id": "c", "text": "kube-proxy"},
+        {"id": "d", "text": "etcd"}
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "A Service has selector app=web but the Pods have label app=frontend. What will happen?",
+      "options": [
+        {"id": "a", "text": "Traffic is routed to all Pods in the namespace"},
+        {"id": "b", "text": "The Service Endpoints list will be empty and connections will fail"},
+        {"id": "c", "text": "Kubernetes automatically corrects the label mismatch"},
+        {"id": "d", "text": "Traffic is routed to the Pod with the oldest matching label"}
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "Which Service type opens a port on every cluster node's IP address?",
+      "options": [
+        {"id": "a", "text": "ClusterIP"},
+        {"id": "b", "text": "ExternalName"},
+        {"id": "c", "text": "NodePort"},
+        {"id": "d", "text": "Headless"}
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "In a Service manifest, what does targetPort refer to?",
+      "options": [
+        {"id": "a", "text": "The port on which the Service itself is reachable within the cluster"},
+        {"id": "b", "text": "The port opened on every node for external access"},
+        {"id": "c", "text": "The port the container process is actually listening on"},
+        {"id": "d", "text": "The port used by kube-proxy for health checks"}
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "b",
+      "q2": "c",
+      "q3": "b",
+      "q4": "c",
+      "q5": "c"
+    },
+    "quiz_explanations": {
+      "q1": "Pods are ephemeral and their IPs change on every restart. Services provide a stable ClusterIP and DNS name so other workloads can reliably connect without tracking individual Pod IPs.",
+      "q2": "kube-proxy runs as a DaemonSet on every node. It watches the Kubernetes API for Service and Endpoints changes and programs iptables (or IPVS) rules to redirect Service IP traffic to the actual backing Pod IPs.",
+      "q3": "A Service uses its label selector to populate the Endpoints object. If no Pods match the selector, Endpoints is empty and Kubernetes has nowhere to route traffic — all connections are refused or time out.",
+      "q4": "NodePort extends ClusterIP by additionally opening a static port (in the 30000–32767 range) on every node's external IP. Traffic arriving at any node on that port is forwarded to the Service's Pods.",
+      "q5": "targetPort is the port number (or named port) on the container itself. The Service's port field is what clients dial; targetPort is where the container is actually listening. They can differ, for example port: 80 with targetPort: 8080."
+    }
+  }
+}

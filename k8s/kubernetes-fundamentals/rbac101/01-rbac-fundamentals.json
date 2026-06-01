@@ -1,0 +1,160 @@
+{
+  "slug": "kubernetes-rbac-fundamentals",
+  "title": "RBAC: Roles, Bindings, and Subjects",
+  "order_index": 1,
+  "type": "conceptual",
+  "difficulty": "intermediate",
+  "description": "Understand Kubernetes Role-Based Access Control (RBAC) — the system that enforces the principle of least privilege for every identity that touches your cluster.\n\n## Overview\nWithout RBAC, any authenticated user or process can read and modify any resource in the cluster. RBAC lets you define exactly which **verbs** (get, list, create, delete…) a given **subject** (user, group, or ServiceAccount) may perform on which **resources** (pods, secrets, deployments…). Access is deny-by-default: if no binding grants a permission, the request is rejected with HTTP 403.\n\n## The Four Core Resources\n\n### Role\nA namespaced resource that defines a set of permissions within **one namespace**. A Role can only grant access to resources in the namespace where it lives.\n\n```yaml\napiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: pod-reader\n  namespace: staging\nrules:\n- apiGroups: [\"\"]      # \"\" is the core API group (pods, services, secrets…)\n  resources: [\"pods\"]\n  verbs: [\"get\", \"list\", \"watch\"]\n```\n\n### ClusterRole\nA cluster-scoped resource that can define permissions for:\n- Cluster-scoped resources (nodes, PersistentVolumes, namespaces)\n- Resources across ALL namespaces (reusable template)\n- Non-resource URLs (`/healthz`, `/metrics`)\n\n```yaml\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: configmap-reader\nrules:\n- apiGroups: [\"\"]\n  resources: [\"configmaps\"]\n  verbs: [\"get\", \"list\"]\n```\n\n### RoleBinding\nGrants a Role **or** ClusterRole to subjects within **one namespace**. Using a ClusterRole in a RoleBinding scopes its permissions to that namespace only.\n\n```yaml\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: read-pods\n  namespace: staging\nsubjects:\n- kind: ServiceAccount\n  name: monitor-sa\n  namespace: staging\nroleRef:\n  kind: Role\n  name: pod-reader\n  apiGroup: rbac.authorization.k8s.io\n```\n\n### ClusterRoleBinding\nGrants a ClusterRole to subjects **cluster-wide** — across all namespaces. Use with caution: this is the broadest grant.\n\n## Subjects\n- **User**: human identity from an external identity provider (certificate CN, OIDC claim)\n- **Group**: a set of users (e.g., `system:authenticated`, OIDC group)\n- **ServiceAccount**: robot identity for Pods — automatically created as `default` in every namespace\n\n## Rules: apiGroups, Resources, Verbs\nApiGroups categorize resources:\n- `\"\"` (empty string) — core API: pods, services, secrets, configmaps, namespaces\n- `\"apps\"` — Deployments, ReplicaSets, DaemonSets, StatefulSets\n- `\"batch\"` — Jobs, CronJobs\n- `\"networking.k8s.io\"` — Ingress, NetworkPolicy\n\nCommon verbs: `get`, `list`, `watch` (read), `create`, `update`, `patch` (write), `delete`, `deletecollection`.\n\n## ServiceAccount in Practice\nEvery Pod runs as a ServiceAccount (default: `default`). The SA token is mounted at `/var/run/secrets/kubernetes.io/serviceaccount/token`. If your Pod calls the Kubernetes API (e.g., a CI/CD agent or operator), create a dedicated SA with minimal permissions:\n\n```yaml\napiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: my-app-sa\n  namespace: production\n```\n\n## When to Use RBAC\n- Multi-tenant clusters: isolate team namespaces\n- CI/CD pipelines that deploy to the cluster\n- Operators and controllers that need specific resource access\n- Auditing: track which identity performed which action\n\n## Common Pitfalls\n- **Using ClusterRoleBinding when RoleBinding suffices**: grants access across ALL namespaces unintentionally. Default to RoleBinding + ClusterRole when you want a reusable permission set scoped to one namespace.\n- **Forgetting apiGroups**: Deployments are in `\"apps\"` — using `\"\"` for Deployments silently denies access.\n- **Confusing Role vs ClusterRole**: a Role cannot grant access to cluster-scoped resources (nodes, PVs) — that requires ClusterRole.\n- **No binding = no access**: creating a ServiceAccount gives it zero permissions. You must also create a binding.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "What is the difference between a Role and a ClusterRole?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Role applies cluster-wide; ClusterRole applies only within one namespace"
+        },
+        {
+          "id": "b",
+          "text": "Role is namespace-scoped; ClusterRole is cluster-scoped and can also apply across all namespaces"
+        },
+        {
+          "id": "c",
+          "text": "Role is for ServiceAccounts; ClusterRole is for human users"
+        },
+        {
+          "id": "d",
+          "text": "There is no difference — Role and ClusterRole have identical scope"
+        }
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "Which apiGroup should you use to grant permissions on Deployments?",
+      "options": [
+        {
+          "id": "a",
+          "text": "\"\" (empty string, core API group)"
+        },
+        {
+          "id": "b",
+          "text": "\"extensions\""
+        },
+        {
+          "id": "c",
+          "text": "\"apps\""
+        },
+        {
+          "id": "d",
+          "text": "\"batch\""
+        }
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "A developer creates a ServiceAccount but forgets to create any binding. What can that ServiceAccount do?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Read all resources in its namespace by default"
+        },
+        {
+          "id": "b",
+          "text": "Nothing — RBAC is deny-by-default, so no binding means no permissions"
+        },
+        {
+          "id": "c",
+          "text": "Perform the same actions as the 'default' ServiceAccount"
+        },
+        {
+          "id": "d",
+          "text": "Read cluster-scoped resources only"
+        }
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "You want a ClusterRole to be usable across multiple namespaces but scoped to each namespace separately. Which binding type should you use?",
+      "options": [
+        {
+          "id": "a",
+          "text": "ClusterRoleBinding in each namespace"
+        },
+        {
+          "id": "b",
+          "text": "RoleBinding in each namespace, referencing the ClusterRole"
+        },
+        {
+          "id": "c",
+          "text": "Multiple Role resources with identical rules in each namespace"
+        },
+        {
+          "id": "d",
+          "text": "A single ClusterRoleBinding with namespace selectors"
+        }
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "Which RBAC resource would you use to allow a ServiceAccount to list Nodes across the entire cluster?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Role with apiGroups: [\"\"], resources: [\"nodes\"]"
+        },
+        {
+          "id": "b",
+          "text": "ClusterRole with apiGroups: [\"\"], resources: [\"nodes\"] bound via ClusterRoleBinding"
+        },
+        {
+          "id": "c",
+          "text": "RoleBinding with resource: nodes in the kube-system namespace"
+        },
+        {
+          "id": "d",
+          "text": "Nodes cannot be accessed via RBAC — they require a special token"
+        }
+      ]
+    },
+    {
+      "id": "q6",
+      "question": "What happens when you use a ClusterRole in a RoleBinding (instead of a ClusterRoleBinding)?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It is invalid — ClusterRoles can only be used with ClusterRoleBindings"
+        },
+        {
+          "id": "b",
+          "text": "The ClusterRole's permissions are scoped to the RoleBinding's namespace only"
+        },
+        {
+          "id": "c",
+          "text": "The subject gets cluster-wide access, same as a ClusterRoleBinding"
+        },
+        {
+          "id": "d",
+          "text": "Kubernetes automatically upgrades it to a ClusterRoleBinding"
+        }
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "b",
+      "q2": "c",
+      "q3": "b",
+      "q4": "b",
+      "q5": "b",
+      "q6": "b"
+    },
+    "quiz_explanations": {
+      "q1": "Role is a namespaced resource — its permissions apply only within the namespace it was created in. ClusterRole is cluster-scoped and can grant permissions on cluster-scoped resources (like Nodes), non-resource URLs, or act as a reusable permission template applied per-namespace via RoleBindings.",
+      "q2": "Deployments, ReplicaSets, DaemonSets, and StatefulSets belong to the 'apps' API group. The empty string '' refers to the core API group which includes Pods, Services, Secrets, ConfigMaps, and Namespaces. Using the wrong apiGroup means the rule silently does not apply.",
+      "q3": "RBAC is deny-by-default. Creating a ServiceAccount only establishes an identity. Without a RoleBinding or ClusterRoleBinding that grants it permissions, every API request from that ServiceAccount will receive HTTP 403 Forbidden.",
+      "q4": "Using a RoleBinding in each namespace that references a single ClusterRole is the recommended pattern. The ClusterRole defines the rules once (DRY), and each RoleBinding scopes those rules to its namespace. A ClusterRoleBinding would grant access cluster-wide, which is too broad.",
+      "q5": "Nodes are cluster-scoped resources (not namespaced), so they can only be managed via a ClusterRole. The ClusterRole must be bound via a ClusterRoleBinding for cluster-wide effect. A Role cannot reference cluster-scoped resources.",
+      "q6": "This is a valid and intentional pattern. When a ClusterRole is referenced in a RoleBinding (not ClusterRoleBinding), its permissions are scoped to the RoleBinding's namespace only. This allows you to define permission templates once in a ClusterRole and apply them per-namespace via RoleBindings."
+    }
+  }
+}

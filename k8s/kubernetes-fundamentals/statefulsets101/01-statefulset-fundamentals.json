@@ -1,0 +1,112 @@
+{
+  "slug": "kubernetes-statefulset-fundamentals",
+  "title": "StatefulSets: Ordered Stateful Workloads",
+  "order_index": 1,
+  "type": "conceptual",
+  "difficulty": "intermediate",
+  "description": "Understand why StatefulSets exist, how they guarantee stable identity and storage, and when to reach for them over Deployments.\n\n## Overview\nMost Kubernetes workloads are stateless — any Pod can handle any request, and Pods are interchangeable. But some applications *care* which Pod is which: a database replica must know it is replica-0 and always rejoin the cluster as replica-0, not as a randomly named clone. StatefulSets solve this by giving each Pod a **stable, persistent identity** that survives rescheduling.\n\n## Key Concepts\n\n### Stable Network Identity\nStatefulSet Pods are named `<statefulset-name>-<ordinal>` — `web-0`, `web-1`, `web-2`. Unlike Deployment Pods (random suffix), these names are deterministic and never change. Combined with a **Headless Service** (`clusterIP: None`), each Pod gets its own DNS entry:\n\n```\nweb-0.nginx.default.svc.cluster.local\nweb-1.nginx.default.svc.cluster.local\n```\n\nThe `serviceName` field in the StatefulSet spec links it to the headless Service.\n\n### Stable Storage via volumeClaimTemplates\nEach Pod gets its own PersistentVolumeClaim (PVC) automatically. A template entry in `volumeClaimTemplates` creates `data-web-0`, `data-web-1`, etc. The PVC is **bound to that Pod identity**, not to the Pod object itself — so if `web-0` is deleted and recreated, it reattaches to the same `data-web-0` PVC.\n\n```yaml\napiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: web\nspec:\n  serviceName: \"nginx\"\n  replicas: 3\n  selector:\n    matchLabels:\n      app: nginx\n  template:\n    metadata:\n      labels:\n        app: nginx\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.25\n        ports:\n        - containerPort: 80\n        volumeMounts:\n        - name: data\n          mountPath: /usr/share/nginx/html\n  volumeClaimTemplates:\n  - metadata:\n      name: data\n    spec:\n      accessModes: [\"ReadWriteOnce\"]\n      resources:\n        requests:\n          storage: 1Gi\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: nginx\nspec:\n  clusterIP: None          # Headless — required\n  selector:\n    app: nginx\n  ports:\n  - port: 80\n```\n\n### Ordered Operations\n- **Scale up**: Pods are created strictly 0 → 1 → 2. Each Pod must be Running and Ready before the next starts.\n- **Scale down**: Pods are deleted N → N-1 → … → 0 (reverse order).\n- **Updates**: RollingUpdate processes Pods from highest ordinal to lowest, one at a time.\n\n### Update Strategies\n- `RollingUpdate` (default): Automatically replaces Pods from highest to lowest ordinal.\n- `OnDelete`: Pods are only replaced when you manually delete them — useful for precise control.\n\n## When to Use StatefulSets\n- Relational databases (MySQL, PostgreSQL primary/replica)\n- Distributed systems needing peer discovery (Kafka, ZooKeeper, etcd, Elasticsearch)\n- Any app where Pods must re-join as the same identity after restart\n\n## When NOT to Use StatefulSets\n- Stateless web servers or APIs — use a **Deployment** instead\n- Workloads where any Pod can handle any request\n- Apps where ordering and stable names add complexity with no benefit\n\n## Common Pitfalls\n- **Missing headless Service**: Without `clusterIP: None`, DNS entries for individual Pods are not created. The StatefulSet will still run, but peer discovery breaks.\n- **Deleting a StatefulSet does not delete its PVCs** — this is intentional to prevent data loss, but orphaned PVCs accumulate storage costs. Delete them manually when cleaning up.\n- **Pod stuck Terminating**: Often caused by the PVC being stuck (e.g., finalizer not removed). Check `kubectl describe pvc`.\n- **Scale-down leaves PVCs behind**: `web-2` is removed but `data-web-2` stays. This is by design — you must delete orphaned PVCs manually.",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "What makes StatefulSet Pod names different from Deployment Pod names?",
+      "options": [
+        {
+          "id": "a",
+          "text": "StatefulSet Pods use random suffixes just like Deployment Pods"
+        },
+        {
+          "id": "b",
+          "text": "StatefulSet Pods are named <statefulset-name>-<ordinal> (e.g., web-0, web-1) and the name is stable across restarts"
+        },
+        {
+          "id": "c",
+          "text": "StatefulSet Pods are named after the node they run on"
+        },
+        {
+          "id": "d",
+          "text": "StatefulSet Pods have no names — they use IP addresses for identity"
+        }
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "Why does a StatefulSet require a Headless Service (clusterIP: None)?",
+      "options": [
+        {
+          "id": "a",
+          "text": "To prevent external traffic from reaching the Pods"
+        },
+        {
+          "id": "b",
+          "text": "To create individual DNS records for each Pod (e.g., web-0.nginx.default.svc.cluster.local)"
+        },
+        {
+          "id": "c",
+          "text": "Because StatefulSets cannot use regular Services"
+        },
+        {
+          "id": "d",
+          "text": "To enable load balancing across Pods"
+        }
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "What happens to PVCs when you delete a StatefulSet?",
+      "options": [
+        {
+          "id": "a",
+          "text": "PVCs are automatically deleted along with the StatefulSet"
+        },
+        {
+          "id": "b",
+          "text": "PVCs are migrated to a new StatefulSet automatically"
+        },
+        {
+          "id": "c",
+          "text": "PVCs remain and must be deleted manually — this is intentional to prevent data loss"
+        },
+        {
+          "id": "d",
+          "text": "PVCs are archived in an S3 bucket"
+        }
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "In what order does a StatefulSet create Pods when scaling from 0 to 3 replicas?",
+      "options": [
+        {
+          "id": "a",
+          "text": "All three Pods start simultaneously in parallel"
+        },
+        {
+          "id": "b",
+          "text": "Pods start in reverse order: web-2 first, then web-1, then web-0"
+        },
+        {
+          "id": "c",
+          "text": "Pods start in ordinal order: web-0 must be Running and Ready before web-1 starts"
+        },
+        {
+          "id": "d",
+          "text": "Pods start in random order determined by the scheduler"
+        }
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "b",
+      "q2": "b",
+      "q3": "c",
+      "q4": "c"
+    },
+    "quiz_explanations": {
+      "q1": "StatefulSet Pods are named <statefulset-name>-<ordinal> (web-0, web-1, web-2). This stable, deterministic name persists across Pod deletions and rescheduling, giving each Pod a unique, permanent identity — unlike Deployment Pods which get random suffixes that change on every restart.",
+      "q2": "A Headless Service (clusterIP: None) tells kube-dns to create individual A records for each Pod endpoint. This gives every StatefulSet Pod its own resolvable DNS name (e.g., web-0.nginx.default.svc.cluster.local), enabling peer discovery in distributed systems like databases and message queues.",
+      "q3": "Deleting a StatefulSet intentionally leaves PVCs intact to prevent accidental data loss. The PVCs and their underlying PersistentVolumes must be deleted manually. This also means that if you recreate the StatefulSet with the same name, the new Pods will reattach to the same PVCs and recover their data.",
+      "q4": "StatefulSets create Pods strictly in ascending ordinal order. web-0 must reach Running and Ready status before web-1 is created, and web-1 must be ready before web-2 starts. This ordered startup guarantees that dependencies (e.g., a primary database) are available before replicas attempt to join."
+    }
+  }
+}

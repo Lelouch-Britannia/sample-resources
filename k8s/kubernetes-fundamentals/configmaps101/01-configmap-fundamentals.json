@@ -1,0 +1,76 @@
+{
+  "slug": "kubernetes-configmap-fundamentals",
+  "title": "ConfigMaps: Decoupling Configuration",
+  "order_index": 1,
+  "type": "conceptual",
+  "difficulty": "beginner",
+  "description": "## What Are ConfigMaps?\n\nA **ConfigMap** is a Kubernetes API object that stores non-confidential configuration data as key-value pairs. ConfigMaps decouple environment-specific configuration from your container images, so the same image can run in development, staging, and production with different settings — no rebuild required.\n\n## Data vs BinaryData\n\n- **`data`**: stores UTF-8 string values (most common)\n- **`binaryData`**: stores base64-encoded binary content (e.g., TLS certs, binary files)\n\nKeys in both fields must be unique across the ConfigMap. The combined size limit is **1 MiB**.\n\n## Creating ConfigMaps\n\n**From literals:**\n```bash\nkubectl create configmap app-config \\\n  --from-literal=APP_ENV=production \\\n  --from-literal=DB_HOST=postgres.svc\n```\n\n**From a file:**\n```bash\nkubectl create configmap nginx-config --from-file=nginx.conf\n```\n\n**From a YAML manifest:**\n```yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-config\ndata:\n  APP_ENV: \"production\"\n  DB_HOST: \"postgres.svc\"\n  LOG_LEVEL: \"info\"\n  config.properties: |\n    max.connections=100\n    timeout=30s\n```\n\n## Immutable ConfigMaps\n\nSetting `immutable: true` prevents any updates to the ConfigMap's data. This protects against accidental changes and improves cluster performance (kubelet stops watching immutable ConfigMaps).\n\n```yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: stable-config\nimmutable: true\ndata:\n  REGION: \"us-east-1\"\n```\n\nOnce immutable, you must delete and recreate the ConfigMap to change values.\n\n## When to Use ConfigMaps\n\n- App configuration (ports, feature flags, log levels)\n- Non-sensitive settings that differ per environment\n- Config files consumed by your application at runtime\n\n## Common Pitfalls\n\n**Using ConfigMaps for secrets** — ConfigMap data is stored unencrypted in etcd. Use `Secret` objects for passwords, tokens, and API keys.\n\n**Exceeding 1 MiB** — ConfigMaps have a hard size limit. Split large configs across multiple ConfigMaps or use a dedicated config server.\n\n**Pod not seeing updates** — Environment variables set from ConfigMaps are baked in at Pod startup. Updating the ConfigMap will NOT update running pods' env vars; you must restart the pod. Volume-mounted ConfigMaps do update automatically (see next unit).",
+  "quizzes": [
+    {
+      "id": "q1",
+      "question": "What is the primary purpose of a Kubernetes ConfigMap?",
+      "options": [
+        {"id": "a", "text": "To store encrypted secrets like passwords and API keys"},
+        {"id": "b", "text": "To decouple configuration data from container images"},
+        {"id": "c", "text": "To define resource limits for containers"},
+        {"id": "d", "text": "To manage network policies between pods"}
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What is the maximum size of a ConfigMap?",
+      "options": [
+        {"id": "a", "text": "512 KiB"},
+        {"id": "b", "text": "10 MiB"},
+        {"id": "c", "text": "1 MiB"},
+        {"id": "d", "text": "Unlimited"}
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "What happens when you set `immutable: true` on a ConfigMap?",
+      "options": [
+        {"id": "a", "text": "The ConfigMap's data is automatically encrypted"},
+        {"id": "b", "text": "The ConfigMap cannot be updated; it must be deleted and recreated to change values"},
+        {"id": "c", "text": "The ConfigMap can only be used as environment variables, not volumes"},
+        {"id": "d", "text": "The ConfigMap is automatically backed up to object storage"}
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "You need to store a database password in Kubernetes. Should you use a ConfigMap?",
+      "options": [
+        {"id": "a", "text": "Yes, ConfigMaps are the standard way to store all configuration including secrets"},
+        {"id": "b", "text": "Yes, but only if you set immutable: true"},
+        {"id": "c", "text": "No, use a Kubernetes Secret instead — ConfigMap data is unencrypted in etcd"},
+        {"id": "d", "text": "No, store it in a Deployment environment variable directly"}
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "Which field would you use to store a base64-encoded binary file in a ConfigMap?",
+      "options": [
+        {"id": "a", "text": "data"},
+        {"id": "b", "text": "binaryData"},
+        {"id": "c", "text": "fileData"},
+        {"id": "d", "text": "rawData"}
+      ]
+    }
+  ],
+  "_solution": {
+    "quiz_answers": {
+      "q1": "b",
+      "q2": "c",
+      "q3": "b",
+      "q4": "c",
+      "q5": "b"
+    },
+    "quiz_explanations": {
+      "q1": "ConfigMaps exist specifically to decouple environment-specific configuration from container images, allowing the same image to run in dev, staging, and production with different settings — no rebuild required.",
+      "q2": "The combined size limit for all data in a ConfigMap (data + binaryData fields together) is 1 MiB. Exceeding this limit will cause the API server to reject the ConfigMap.",
+      "q3": "Setting immutable: true prevents any updates to the ConfigMap's data fields. To change values, you must delete the ConfigMap and create a new one. This also provides a performance benefit — kubelet stops watching immutable ConfigMaps for changes.",
+      "q4": "ConfigMap data is stored in plaintext in etcd, making it unsuitable for sensitive information. Kubernetes Secrets are the correct object for passwords, tokens, and API keys (though Secrets also require additional encryption-at-rest configuration for full security).",
+      "q5": "The binaryData field accepts base64-encoded binary content, allowing ConfigMaps to store binary files like TLS certificates. The data field only accepts valid UTF-8 strings."
+    }
+  }
+}

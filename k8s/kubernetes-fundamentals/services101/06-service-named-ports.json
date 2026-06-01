@@ -1,0 +1,29 @@
+{
+  "slug": "kubernetes-service-named-ports",
+  "title": "Service with Named Ports",
+  "order_index": 6,
+  "type": "coding",
+  "difficulty": "intermediate",
+  "description": "Create a multi-port Service exposing HTTP (port 80) and a metrics endpoint (port 9090) from a single Pod, referencing container ports by name instead of number.\n\n**Why this matters**: Named ports decouple Service definitions from exact port numbers. If a container port changes, only the Pod spec needs updating — the Service manifest stays the same. This is also required by Prometheus ServiceMonitors.\n\n**Common Pitfalls**: Named port values in containerPorts must exactly match the targetPort strings in the Service. A name typo silently creates a port with no backing target.",
+  "steps": [
+    "Define two named containerPorts on the Pod: name=http port=80, name=metrics port=9090",
+    "In the Service, add two port entries referencing targetPort by name (http and metrics)",
+    "Apply with kubectl apply -f solution.yaml",
+    "Verify both ports appear in kubectl get svc app-server-svc",
+    "Verify endpoints exist for the Service"
+  ],
+  "hints": [
+    "containerPort entries accept a 'name' field — this name is what you reference in targetPort",
+    "targetPort can be a string (port name) or an integer (port number)",
+    "Each Service ports entry needs its own 'name' field when there are multiple ports",
+    "Use 'kubectl describe svc app-server-svc' to see both port mappings"
+  ],
+  "editor_config": {
+    "language": "yaml",
+    "initial_code": "# --- App Pod with two named ports ---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: app-server\n  labels:\n    app: app-server\nspec:\n  containers:\n  - name: app\n    image: nginx:alpine\n    ports:\n    - name: # TODO: name the HTTP port (e.g. 'http')\n      containerPort: 80\n    - name: # TODO: name the metrics port (e.g. 'metrics')\n      containerPort: 9090\n---\n# --- Multi-port Service using named targetPorts ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: app-server-svc\nspec:\n  selector:\n    app: app-server\n  ports:\n  - name: http\n    port: 80\n    targetPort: # TODO: reference the named port (must match containerPort name above)\n  - name: metrics\n    port: 9090\n    targetPort: # TODO: reference the named metrics port\n"
+  },
+  "_solution": {
+    "code_solution": "# --- App Pod with two named ports ---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: app-server\n  labels:\n    app: app-server\nspec:\n  containers:\n  - name: app\n    image: nginx:alpine\n    ports:\n    - name: http\n      containerPort: 80\n    - name: metrics\n      containerPort: 9090\n---\n# --- Multi-port Service using named targetPorts ---\napiVersion: v1\nkind: Service\nmetadata:\n  name: app-server-svc\nspec:\n  selector:\n    app: app-server\n  ports:\n  - name: http\n    port: 80\n    targetPort: http\n  - name: metrics\n    port: 9090\n    targetPort: metrics\n",
+    "validation_script": "#!/bin/bash\nset -e\n\nkubectl apply -f solution.yaml\n\necho \"Waiting for app-server Pod to be running...\"\ntimeout=60\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  phase=$(kubectl get pod app-server -o jsonpath='{.status.phase}' 2>/dev/null || echo \"Pending\")\n  if [ \"$phase\" = \"Running\" ]; then break; fi\n  sleep 3\n  ((elapsed+=3))\ndone\nif [ \"$phase\" != \"Running\" ]; then\n  echo \"✗ app-server Pod did not reach Running state\"\n  exit 1\nfi\necho \"✓ app-server Pod is running\"\n\nPORT_COUNT=$(kubectl get svc app-server-svc -o jsonpath='{.spec.ports}' | python3 -c \"import sys,json; print(len(json.loads(sys.stdin.read())))\" 2>/dev/null || echo \"0\")\nif [ \"$PORT_COUNT\" -lt 2 ]; then\n  echo \"✗ Service app-server-svc has $PORT_COUNT port(s), expected 2\"\n  exit 1\nfi\necho \"✓ Service app-server-svc has $PORT_COUNT ports\"\n\nHTTP_TARGET=$(kubectl get svc app-server-svc -o jsonpath='{.spec.ports[?(@.name==\"http\")].targetPort}' 2>/dev/null || echo \"\")\nif [ \"$HTTP_TARGET\" != \"http\" ]; then\n  echo \"✗ HTTP port targetPort is '$HTTP_TARGET', expected named port 'http'\"\n  exit 1\nfi\necho \"✓ HTTP port uses named targetPort 'http'\"\n\nMETRICS_TARGET=$(kubectl get svc app-server-svc -o jsonpath='{.spec.ports[?(@.name==\"metrics\")].targetPort}' 2>/dev/null || echo \"\")\nif [ \"$METRICS_TARGET\" != \"metrics\" ]; then\n  echo \"✗ Metrics port targetPort is '$METRICS_TARGET', expected named port 'metrics'\"\n  exit 1\nfi\necho \"✓ Metrics port uses named targetPort 'metrics'\"\n\nENDPOINTS=$(kubectl get endpoints app-server-svc -o jsonpath='{.subsets[0].addresses}' 2>/dev/null || echo \"\")\nif [ -z \"$ENDPOINTS\" ] || [ \"$ENDPOINTS\" = \"null\" ]; then\n  echo \"✗ Service app-server-svc has no endpoints\"\n  exit 1\nfi\necho \"✓ Service app-server-svc has endpoints\"\n\nPOD_HTTP_PORT=$(kubectl get pod app-server -o jsonpath='{.spec.containers[0].ports[?(@.name==\"http\")].containerPort}' 2>/dev/null || echo \"\")\nif [ \"$POD_HTTP_PORT\" != \"80\" ]; then\n  echo \"✗ Pod http named port is '$POD_HTTP_PORT', expected 80\"\n  exit 1\nfi\necho \"✓ Pod containerPort 'http' is 80\"\n\nPOD_METRICS_PORT=$(kubectl get pod app-server -o jsonpath='{.spec.containers[0].ports[?(@.name==\"metrics\")].containerPort}' 2>/dev/null || echo \"\")\nif [ \"$POD_METRICS_PORT\" != \"9090\" ]; then\n  echo \"✗ Pod metrics named port is '$POD_METRICS_PORT', expected 9090\"\n  exit 1\nfi\necho \"✓ Pod containerPort 'metrics' is 9090\"\n\necho \"✓ Named ports Service validation passed\"\nexit 0\n"
+  }
+}
