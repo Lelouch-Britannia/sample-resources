@@ -21,7 +21,7 @@
   ],
   "editor_config": {
     "language": "yaml",
-    "initial_code": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: logger-pod\nspec:\n  volumes:\n  - name: log-storage\n    emptyDir: {}\n  containers:\n  - name: app\n    image: busybox:latest\n    volumeMounts:\n    - name: log-storage\n      mountPath: /var/log\n    command: ['/bin/sh', '-c', 'while true; do echo Running... >> /var/log/app.log; sleep 5; done']\n  # TODO: Add sidecar container that reads from the same volume\n"
+    "initial_code": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: logger-pod\nspec:\n  volumes:\n  - name: log-storage\n    emptyDir: {}\n  containers:\n  - name: app\n    image: busybox:latest\n    volumeMounts:\n    - name: log-storage\n      mountPath: /var/log\n    command: ['/bin/sh', '-c', 'while true; do echo Running... >> /var/log/app.log; sleep 5; done']\n  - name: sidecar\n    image: busybox:latest\n    volumeMounts:\n    - name: log-storage\n      mountPath: /logs\n    # TODO: Add command to tail the log file at /logs/app.log\n"
   },
   "_solution": {
     "code_solution": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: logger-pod\nspec:\n  volumes:\n  - name: log-storage\n    emptyDir: {}\n  containers:\n  - name: app\n    image: busybox\n    volumeMounts:\n    - name: log-storage\n      mountPath: /var/log\n    args:\n    - /bin/sh\n    - -c\n    - 'while true; do echo \"Running...\" >> /var/log/app.log; sleep 5; done'\n  - name: sidecar\n    image: busybox\n    volumeMounts:\n    - name: log-storage\n      mountPath: /logs\n    args:\n    - /bin/sh\n    - -c\n    - 'tail -f /logs/app.log'\n",
