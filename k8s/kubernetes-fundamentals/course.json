@@ -1,5 +1,51 @@
 {
   "slug": "kubernetes-fundamentals",
   "name": "Kubernetes Fundamentals",
-  "description": "Master the core concepts of Kubernetes from Pods to Deployments"
+  "tagline": "Go from zero to deploying production-grade Kubernetes workloads",
+  "description": "Kubernetes Fundamentals is a hands-on course covering everything you need to understand and operate Kubernetes in production. You will learn the core building blocks — Pods, ReplicaSets, Deployments — and progressively work up to networking with Services and Ingress, stateful workloads with StatefulSets, cluster configuration with ConfigMaps and Scheduler, and access control with RBAC.\n\nEvery topic includes both conceptual units (theory + quizzes) and coding exercises where you apply manifests against a real Kubernetes cluster. You will debug real failures, observe self-healing behavior, and build production-ready patterns.\n\nBy the end of this course you will be comfortable reading and writing Kubernetes manifests, understanding what happens inside the cluster, and troubleshooting common issues.",
+  "level": "beginner",
+  "estimated_hours": 20,
+  "prerequisites": [
+    "Basic Linux command line (navigating directories, running commands)",
+    "Docker fundamentals (images, containers, basic docker run)",
+    "YAML syntax basics"
+  ],
+  "what_you_learn": [
+    "Understand Kubernetes architecture and control plane components",
+    "Deploy and manage stateless workloads with Pods and Deployments",
+    "Scale applications and observe self-healing with ReplicaSets",
+    "Expose workloads internally and externally with Services",
+    "Route HTTP traffic with Ingress controllers",
+    "Manage stateful applications with StatefulSets",
+    "Inject configuration safely with ConfigMaps",
+    "Control scheduling with node affinity and taints/tolerations",
+    "Secure the cluster with RBAC roles and service accounts",
+    "Run node-level agents with DaemonSets"
+  ],
+  "author": {
+    "name": "KubePlayground Team",
+    "bio": "Platform engineers with extensive production Kubernetes experience across cloud and on-premise environments. We built KubePlayground to provide realistic, hands-on K8s practice without the setup overhead."
+  },
+  "modules": [
+    {
+      "title": "Core Workloads",
+      "week": 1,
+      "topics": ["pods101", "replicaset101", "deployment101"]
+    },
+    {
+      "title": "Configuration & Scheduling",
+      "week": 2,
+      "topics": ["configmaps101", "scheduler101"]
+    },
+    {
+      "title": "Networking",
+      "week": 3,
+      "topics": ["services101", "ingress101"]
+    },
+    {
+      "title": "Advanced Workloads & Security",
+      "week": 4,
+      "topics": ["statefulsets101", "daemonsets101", "rbac101"]
+    }
+  ]
 }
