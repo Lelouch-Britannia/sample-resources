@@ -4,27 +4,26 @@
   "order_index": 6,
   "type": "coding",
   "difficulty": "intermediate",
-  "description": "Combine multi-container Pod patterns with ReplicaSet scalability by creating 2 replicas of a logging sidecar application.\n\n**Focus**: Putting a complex multi-container Pod specification inside a ReplicaSet template to achieve high availability for the entire Pod pattern.\n\nThis exercise demonstrates that ReplicaSets aren't limited to simple single-container Pods. You can use the complete Pod specification syntax inside the `template` section, including:\n- Multiple containers\n- Shared volumes (emptyDir, ConfigMaps, Secrets)\n- Init containers\n- Resource limits and requests\n- Liveness and readiness probes\n\n**The HA Logging Pattern**:\nEach replica will have:\n- **Writer container**: Generates log data and writes to `/var/log/date.log`\n- **Shipper container**: Reads from `/out/date.log` and outputs to stdout\n- **Shared emptyDir volume**: Connects writer and shipper\n\n**Important**: Each replica gets its own independent `emptyDir` volume. The volume is shared between containers **within** a Pod, but not between different replicas.\n\n**Real-World Use Case**: This pattern is used in production for log aggregation (fluentd/logstash sidecars), service mesh proxies (Envoy, Linkerd), and metrics exporters (Prometheus node exporter).",
+  "description": "Deploy 2 replicas of a sidecar logging pattern — a writer container and a shipper container sharing an emptyDir volume inside each Pod.\n\n**Focus**: Multi-container Pod specs work inside ReplicaSet templates unchanged. Each replica gets its own independent emptyDir volume (not shared across replicas).\n\n## Common Pitfalls\n- **emptyDir is per-Pod**: Data is not shared between replicas, only between containers within one Pod.\n- **Container name mismatch**: `kubectl logs <pod> -c <container>` requires the exact container name.\n- **Sidecar not reading**: Verify volumeMount paths match between writer and shipper.",
   "steps": [
-    "Create ReplicaSet named 'ha-logger' with 2 replicas",
-    "Define emptyDir volume named 'log-data' in template",
-    "Add writer container that writes date to /var/log/date.log",
-    "Mount log-data volume to /var/log in writer container",
-    "Add shipper container that tails /out/date.log",
-    "Mount log-data volume to /out in shipper container"
+    "Set selector.matchLabels and template.metadata.labels to the same label",
+    "Add a second container named 'shipper' using busybox image",
+    "Mount the 'log-data' volume in the shipper container at a different path",
+    "Configure shipper to continuously tail the log file written by writer",
+    "Apply and verify both containers in each pod reach Running state"
   ],
   "hints": [
-    "The volumes section goes under spec.template.spec, not at the top level",
-    "Each replica will have its own independent emptyDir volume",
-    "Use args field with array syntax for shell commands",
-    "Both containers in each Pod share the same volume instance"
+    "volumes go under spec.template.spec — same level as containers, not at RS top level",
+    "shipper needs a volumeMount pointing to the same volume name as writer, but mountPath can differ",
+    "Use 'tail -f' not 'tail' — without -f the process exits immediately and the pod crashloops",
+    "Use 'logger' as the app label value — validation queries pods with app=logger"
   ],
   "editor_config": {
     "language": "yaml",
-    "initial_code": "apiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: rs-ha-logger\n  labels:\n    app: ha-logger\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: ha-logger\n  template:\n    metadata:\n      name: pods-ha-logger\n      labels:\n        app: ha-logger\n    spec:\n      volumes:\n        - name: log-data\n          emptyDir: {}\n      containers:\n        - name: writer\n          image: busybox\n          volumeMounts:\n            - name: log-data\n              mountPath: /var/log\n          command: ['/bin/sh', '-c', 'while true; do echo Writing log... >> /var/log/app.log; sleep 5; done']\n        # TODO: Add shipper container that reads from the shared volume\n"
+    "initial_code": "apiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: ha-logger\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: # TODO: use 'logger'\n  template:\n    metadata:\n      labels:\n        app: logger\n    spec:\n      volumes:\n      - name: log-data\n        emptyDir: {}\n      containers:\n      - name: writer\n        image: busybox\n        volumeMounts:\n        - name: log-data\n          mountPath: /var/log\n        args: ['/bin/sh', '-c', 'while true; do date >> /var/log/app.log; sleep 5; done']\n      # TODO: add shipper container (name: shipper, image: busybox)\n      # Mount log-data volume at a different path and tail -f the log file\n"
   },
   "_solution": {
-    "code_solution": "apiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: ha-logger\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: logger\n  template:\n    metadata:\n      labels:\n        app: logger\n    spec: # <--- Start of your familiar Multi-Container Pod Spec\n      volumes:\n      - name: log-data\n        emptyDir: {}\n      containers:\n      - name: writer\n        image: busybox\n        args: ['/bin/sh', '-c', 'while true; do date >> /var/log/date.log; sleep 1; done']\n        volumeMounts:\n        - name: log-data\n          mountPath: /var/log\n      - name: shipper\n        image: busybox\n        args: ['/bin/sh', '-c', 'tail -f /out/date.log']\n        volumeMounts:\n        - name: log-data\n          mountPath: /out\n",
+    "code_solution": "apiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: ha-logger\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: logger\n  template:\n    metadata:\n      labels:\n        app: logger\n    spec:\n      volumes:\n      - name: log-data\n        emptyDir: {}\n      containers:\n      - name: writer\n        image: busybox\n        volumeMounts:\n        - name: log-data\n          mountPath: /var/log\n        args: ['/bin/sh', '-c', 'while true; do date >> /var/log/app.log; sleep 5; done']\n      - name: shipper\n        image: busybox\n        volumeMounts:\n        - name: log-data\n          mountPath: /out\n        args: ['/bin/sh', '-c', 'tail -f /out/app.log']\n",
     "validation_script": "#!/bin/bash\n# Apply the manifest\nkubectl apply -f solution.yaml\n\n# Wait for ReplicaSet to be ready\ntimeout=60\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get rs ha-logger -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo \"0\")\n  if [ \"$ready\" = \"2\" ]; then\n    echo \"✓ ReplicaSet has 2 ready replicas\"\n    \n    # Get one of the pod names\n    pod_name=$(kubectl get pods -l app=logger -o jsonpath='{.items[0].metadata.name}')\n    \n    # Wait a few seconds for logs to accumulate\n    sleep 5\n    \n    # Check logs from shipper container\n    logs=$(kubectl logs \"$pod_name\" -c shipper --tail=3 2>/dev/null)\n    \n    if echo \"$logs\" | grep -q \".\"; then\n      echo \"✓ Shipper container successfully reading logs from shared volume\"\n      \n      # Verify both containers exist in each pod\n      containers=$(kubectl get pod \"$pod_name\" -o jsonpath='{.spec.containers[*].name}')\n      if echo \"$containers\" | grep -q \"writer\" && echo \"$containers\" | grep -q \"shipper\"; then\n        echo \"✓ Both writer and shipper containers present in pods\"\n        exit 0\n      fi\n    fi\n  fi\n  sleep 2\n  ((elapsed+=2))\ndone\n\necho \"✗ ReplicaSet validation failed\"\nkubectl get rs ha-logger\nkubectl get pods -l app=logger\nexit 1\n"
   }
 }

@@ -4,27 +4,25 @@
   "order_index": 4,
   "type": "coding",
   "difficulty": "beginner",
-  "description": "Convert a standard Pod manifest into a ReplicaSet that maintains 3 copies of a simple web server.\n\n**Focus**: Understanding the nesting structure (`spec.template`) and the strict requirement for label matching between `selector.matchLabels` and `template.metadata.labels`.\n\nThis exercise demonstrates the fundamental ReplicaSet pattern - the `template` section contains a complete Pod specification that becomes nested under the ReplicaSet's spec. Think of it as wrapping a Pod definition inside a controller.\n\n**Key Learning Points**:\n- The `template.metadata.labels` **must exactly match** `spec.selector.matchLabels` or Kubernetes rejects the ReplicaSet\n- Everything under `template.spec` is a standard Pod specification (containers, volumes, etc.)\n- The ReplicaSet maintains exactly 3 replicas - if you delete one, it's automatically recreated\n- Use `kubectl get rs` to see DESIRED, CURRENT, and READY counts\n\n**Self-Healing Test**: After creating the ReplicaSet, try deleting one of the Pods manually:\n```bash\nkubectl delete pod <pod-name>\n```\nWatch as the ReplicaSet immediately creates a replacement to maintain the desired count of 3.",
+  "description": "Wrap a Pod definition inside a ReplicaSet that keeps 3 nginx replicas running.\n\n**Focus**: The nesting structure — `spec.template` holds a complete Pod spec, and `selector.matchLabels` must exactly match `template.metadata.labels`.\n\n## Common Pitfalls\n- **Selector/label mismatch**: Kubernetes rejects the ReplicaSet immediately if they don't match.\n- **Setting `template.metadata.name`**: Ignored by ReplicaSets — pods get auto-generated names.\n- **apiVersion**: ReplicaSets require `apps/v1`, not `v1`.",
   "steps": [
-    "Create ReplicaSet named 'simple-web' with Kind 'ReplicaSet'",
-    "Set replicas to 3",
-    "Configure selector to match label app: static-web",
-    "Define template with matching labels (app: static-web)",
-    "Add container named 'web' using nginx:alpine image",
-    "Verify the ReplicaSet maintains 3 running pods"
+    "Write a ReplicaSet manifest with 3 replicas of nginx:alpine",
+    "Set selector.matchLabels to a label of your choice",
+    "Ensure template.metadata.labels matches the selector exactly",
+    "Apply and verify 3 pods reach Running state"
   ],
   "hints": [
-    "The template.metadata.labels must exactly match spec.selector.matchLabels",
-    "The template section contains a full Pod specification",
-    "Use apiVersion: apps/v1 for ReplicaSets, not v1",
-    "Try deleting one pod manually to see self-healing in action"
+    "ReplicaSets use apiVersion: apps/v1, not v1",
+    "spec.selector.matchLabels and spec.template.metadata.labels must be identical — Kubernetes rejects the manifest if they differ",
+    "spec.template contains a full Pod spec: metadata + spec.containers",
+    "Use 'simple-web' as the label value — validation queries pods with app=simple-web"
   ],
   "editor_config": {
     "language": "yaml",
-    "initial_code": "apiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: simple-web\n  labels:\n    app: static-web\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: static-web\n  template:\n    metadata:\n      name: web\n      labels:\n        app: static-web\n    spec:\n      containers:\n      - name: web\n        image: nginx:alpine\n"
+    "initial_code": "apiVersion: # TODO: which API group handles ReplicaSets?\nkind: # TODO: resource kind\nmetadata:\n  name: simple-web\nspec:\n  replicas: # TODO: how many copies?\n  selector:\n    matchLabels:\n      app: # TODO: use 'simple-web'\n  template:\n    metadata:\n      labels:\n        app: simple-web   # Must match selector above\n    spec:\n      containers:\n      - name: web\n        image: # TODO: use nginx:alpine\n"
   },
   "_solution": {
     "code_solution": "apiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: simple-web\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: static-web\n  template: # <--- Everything below here is basically a Pod definition\n    metadata:\n      labels:\n        app: static-web # MUST match the selector above\n    spec:\n      containers:\n      - name: web\n        image: nginx:alpine\n",
-    "validation_script": "#!/bin/bash\n# Apply the manifest\nkubectl apply -f solution.yaml\n\n# Wait for ReplicaSet to be ready\ntimeout=60\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get rs simple-web -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo \"0\")\n  if [ \"$ready\" = \"3\" ]; then\n    echo \"✓ ReplicaSet has 3 ready replicas\"\n    \n    # Test self-healing by deleting one pod\n    pod_name=$(kubectl get pods -l app=static-web -o jsonpath='{.items[0].metadata.name}')\n    kubectl delete pod \"$pod_name\" --wait=false\n    \n    sleep 5\n    \n    # Verify it was recreated\n    current=$(kubectl get rs simple-web -o jsonpath='{.status.replicas}')\n    if [ \"$current\" = \"3\" ]; then\n      echo \"✓ Self-healing verified: Pod was automatically recreated\"\n      exit 0\n    fi\n  fi\n  sleep 2\n  ((elapsed+=2))\ndone\n\necho \"✗ ReplicaSet did not reach desired state\"\nkubectl get rs simple-web\nexit 1\n"
+    "validation_script": "#!/bin/bash\n# Apply the manifest\nkubectl apply -f solution.yaml\n\n# Wait for ReplicaSet to be ready\ntimeout=60\nelapsed=0\nwhile [ $elapsed -lt $timeout ]; do\n  ready=$(kubectl get rs simple-web -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo \"0\")\n  if [ \"$ready\" = \"3\" ]; then\n    echo \"✓ ReplicaSet has 3 ready replicas\"\n    \n    # Test self-healing by deleting one pod\n    pod_name=$(kubectl get pods -l app=simple-web -o jsonpath='{.items[0].metadata.name}')\n    kubectl delete pod \"$pod_name\" --wait=false\n    \n    sleep 5\n    \n    # Verify it was recreated\n    current=$(kubectl get rs simple-web -o jsonpath='{.status.replicas}')\n    if [ \"$current\" = \"3\" ]; then\n      echo \"✓ Self-healing verified: Pod was automatically recreated\"\n      exit 0\n    fi\n  fi\n  sleep 2\n  ((elapsed+=2))\ndone\n\necho \"✗ ReplicaSet did not reach desired state\"\nkubectl get rs simple-web\nexit 1\n"
   }
 }
