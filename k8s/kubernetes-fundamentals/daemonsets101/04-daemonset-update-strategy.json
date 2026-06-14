@@ -6,20 +6,16 @@
   "difficulty": "intermediate",
   "description": "Deploy a DaemonSet with `OnDelete` update strategy, update the container image, and manually trigger updates by deleting Pods one at a time.\n\n**Focus**: Contrasting `OnDelete` with `RollingUpdate` — useful when you need to drain a node safely before replacing its agent.\n\n## Common Pitfalls\n- After `kubectl set image`, no Pods restart with OnDelete — this is correct, not a bug.\n- Each Pod must be manually deleted to pick up the new image on its node.\n- Verify the replacement Pod uses the new image before deleting the next one.",
   "steps": [
-    "Create a DaemonSet named 'log-agent' with updateStrategy type: OnDelete using image busybox:1.35",
-    "Verify pods are running and note the current image",
-    "Update the container image to busybox:1.36: kubectl set image daemonset/log-agent agent=busybox:1.36",
-    "Verify no pods have updated automatically (OnDelete does not auto-restart): kubectl get pods -l app=log-agent -o jsonpath='{range .items[*]}{.spec.containers[0].image}{\"\\n\"}{end}'",
-    "Delete one pod manually: kubectl delete pod <pod-name>",
-    "Verify the replacement pod uses the new image busybox:1.36",
-    "Repeat for remaining pods to complete the manual rollout"
+    "Create a DaemonSet named 'log-agent' with OnDelete updateStrategy using busybox:1.35",
+    "Submit — the validator verifies OnDelete strategy is set, updates the image, confirms pods do NOT auto-update, then manually deletes one pod to verify the new pod starts with the updated image"
   ],
   "hints": [
     "updateStrategy.type: OnDelete must be set inside spec, not spec.template",
     "After kubectl set image, the StatefulSet DESIRED changes but pods do not restart — this is correct",
     "kubectl get pods -l app=log-agent -o wide shows pod names and nodes",
     "After deleting a pod, the DaemonSet creates a new one on the same node with the updated spec",
-    "kubectl describe ds log-agent shows the updateStrategy and current image in the spec"
+    "kubectl describe ds log-agent shows the updateStrategy and current image in the spec",
+    "With OnDelete strategy, pods only update when manually deleted — the validator tests this automatically"
   ],
   "editor_config": {
     "language": "yaml",

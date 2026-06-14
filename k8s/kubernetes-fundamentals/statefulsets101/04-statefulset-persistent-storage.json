@@ -6,12 +6,10 @@
   "difficulty": "intermediate",
   "description": "Deploy a StatefulSet with `volumeClaimTemplates` and prove that each Pod's data survives Pod deletion and recreation.\n\n**Focus**: Demonstrating that PVCs are bound to Pod *identity*, not Pod *objects* — the cornerstone of StatefulSet durability.\n\n## Common Pitfalls\n- `volumeClaimTemplates` creates PVCs automatically only on first Pod scheduling — ensure your cluster has a default StorageClass.\n- If you delete web-0 and it doesn't come back, check `kubectl get pvc` for a stuck PVC in `Pending` state.\n- PVCs are never deleted automatically — even after the StatefulSet is deleted.",
   "steps": [
-    "Create a StatefulSet named 'web' with 2 replicas using nginx:1.25, with a volumeClaimTemplate named 'data' requesting 100Mi at /usr/share/nginx/html",
-    "Verify two PVCs are created: data-web-0 and data-web-1, both Bound",
-    "Write a custom index.html to web-0: kubectl exec web-0 -- sh -c 'echo web-0-data > /usr/share/nginx/html/index.html'",
-    "Delete pod web-0: kubectl delete pod web-0",
-    "Wait for web-0 to be recreated (kubectl get pod web-0 -w)",
-    "Verify data persisted: kubectl exec web-0 -- cat /usr/share/nginx/html/index.html — output must be 'web-0-data'"
+    "Create a StatefulSet named 'web' with 2 replicas using nginx:alpine",
+    "Add a volumeClaimTemplate named 'data' requesting 1Gi storage mounted at /usr/share/nginx/html",
+    "Create a headless Service named 'nginx' for the StatefulSet",
+    "Submit — the validator verifies pod creation, PVC creation, writes data to web-0, deletes web-0, and confirms data persists after recreation"
   ],
   "hints": [
     "volumeClaimTemplates sits at the same level as spec.template, not inside it",

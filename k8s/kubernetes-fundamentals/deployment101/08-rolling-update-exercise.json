@@ -6,20 +6,17 @@
   "difficulty": "intermediate",
   "description": "Implement a complete rolling update deployment lifecycle including creation, scaling, updating, and rollback verification.\n\n**Focus**: Configuring RollingUpdate strategy with maxSurge and maxUnavailable to ensure zero-downtime updates while practicing the full deployment workflow.\n\nThis exercise teaches the complete deployment lifecycle. You'll configure rolling update parameters, observe how Kubernetes orchestrates the gradual pod replacement during image updates, and verify that the revision history is maintained for rollback capabilities. The \"Pass the Baton\" pattern you'll observe - where the old ReplicaSet scales down (3→2→1→0) while the new ReplicaSet scales up (0→1→2→3) - ensures continuous availability. Understanding this behavior is essential for debugging stuck rollouts and configuring appropriate update parameters.",
   "steps": [
-    "Create Deployment 'nginx-rolling' with 3 replicas of nginx:1.26",
-    "Configure RollingUpdate strategy with maxSurge: 1 and maxUnavailable: 1",
-    "Apply the deployment and verify 3 pods are running",
-    "Scale deployment to 5 replicas and observe",
-    "Scale back to 3 replicas",
-    "Update image to nginx:1.27 and watch the rolling update",
-    "Verify rollout history shows 2 revisions"
+    "Create Deployment 'nginx-rolling' with 3 replicas of nginx:1.26 and RollingUpdate strategy",
+    "Set maxSurge: 1 and maxUnavailable: 1 in the rollingUpdate spec",
+    "Submit — the validator verifies the manifest, then tests scaling and rollout history automatically"
   ],
   "hints": [
     "Use strategy.type: RollingUpdate and strategy.rollingUpdate for configuration",
     "maxSurge: 1 means max 4 pods during update (3 + 1)",
     "maxUnavailable: 1 means min 2 pods available (3 - 1)",
     "Use 'kubectl set image' to trigger an update",
-    "Watch the update with 'kubectl get rs -w' in another terminal"
+    "Watch the update with 'kubectl get rs -w' in another terminal",
+    "The validator automatically scales to 5, back to 3, and updates the image to verify rollout history"
   ],
   "editor_config": {
     "language": "yaml",

@@ -6,19 +6,15 @@
   "difficulty": "advanced",
   "description": "Scale a StatefulSet up and down to observe strict ordered Pod creation and deletion — a key behavioral difference from Deployments.\n\n**Focus**: Internalizing why ordered scaling matters for stateful workloads, and understanding PVC retention on scale-down.\n\n## Common Pitfalls\n- Deployments scale in parallel; StatefulSets do not — each Pod waits for the previous to be Ready.\n- PVCs for removed Pods are NOT deleted on scale-down — they persist and consume storage.\n- A stuck `Pending` Pod blocks the whole scale-up; check events with `kubectl describe pod`.",
   "steps": [
-    "Deploy a StatefulSet named 'web' with 1 replica using nginx:1.25 and a headless Service",
-    "Scale to 3 replicas: kubectl scale statefulset web --replicas=3",
-    "Watch pod creation order using: kubectl get pods -l app=nginx -w — confirm web-1 starts only after web-0 is Running",
-    "Scale down to 1 replica: kubectl scale statefulset web --replicas=1",
-    "Watch pod deletion order using kubectl get pods -l app=nginx -w — confirm web-2 is deleted before web-1",
-    "After scale-down, list PVCs with kubectl get pvc — confirm data-web-1 and data-web-2 still exist"
+    "Create a StatefulSet named 'web' with 1 initial replica using nginx:alpine",
+    "Create a headless Service named 'nginx' for the StatefulSet",
+    "Submit — the validator automatically scales up to 3, verifies ordered creation (web-0→web-1→web-2), scales down to 1, and verifies deletion order and PVC retention"
   ],
   "hints": [
-    "Use 'kubectl get pods -w' in a separate terminal to watch real-time pod events",
     "kubectl get events --sort-by=.lastTimestamp shows what the StatefulSet controller is doing",
     "After scale-down, 'kubectl get pvc' will still show data-web-1 and data-web-2 — this is expected",
-    "kubectl scale statefulset web --replicas=3 is equivalent to editing spec.replicas in the manifest",
-    "If a pod is stuck Pending, run 'kubectl describe pod web-1' to see if PVC binding is the issue"
+    "If a pod is stuck Pending, run 'kubectl describe pod web-1' to see if PVC binding is the issue",
+    "All scaling and ordering verification is done automatically by the validator — just write the manifest"
   ],
   "editor_config": {
     "language": "yaml",
